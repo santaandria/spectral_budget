@@ -103,16 +103,17 @@ def results_to_csv(stations_df):
     for index, row in stations_df.iterrows():
 
         try:
-            lorentzian_param, params, *_ = load_analysis_results(
+            lorentzian_params, params, *_ = load_analysis_results(
                 station_id=row["station_id"]
             )
             # Process Lorentzian Fit results
-            lorentzian_param, params, _, _ = load_analysis_results(
+            lorentzian_params, params, _, _ = load_analysis_results(
                 station_id=row["station_id"]
             )
             print(f'----- Processing {row["station_id"]} -----')
+            lorentzian_param = lorentzian_params['wavelet'][0] ## Change here
             lorentzian_param["station_id"] = row["station_id"]
-            del lorentzian_param["c_CI"], lorentzian_param["breakpoint"]
+            del lorentzian_param["breakpoint"]
             lorentzian_param_row.append(lorentzian_param)
 
             # Create dictionaries for each parameter with NaN for missing values

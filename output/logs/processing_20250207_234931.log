@@ -1,0 +1,219 @@
+2025-02-07 23:49:31,079 - INFO - Starting analysis pipeline
+2025-02-07 23:49:31,080 - INFO - Loaded 71 stations for processing
+2025-02-07 23:49:33,976 - INFO - Processing station 003_BL_Ar
+2025-02-07 23:49:40,729 - INFO - Creating plots for station 003_BL_Ar
+2025-02-07 23:49:55,839 - INFO - Successfully completed analysis for station 003_BL_Ar
+2025-02-07 23:49:55,839 - INFO - Processing station 009_BL_Ca
+2025-02-07 23:50:00,123 - INFO - Creating plots for station 009_BL_Ca
+2025-02-07 23:50:17,398 - INFO - Successfully completed analysis for station 009_BL_Ca
+2025-02-07 23:50:17,398 - INFO - Processing station 011_BL_Ma
+2025-02-07 23:50:21,598 - INFO - Creating plots for station 011_BL_Ma
+2025-02-07 23:50:38,758 - INFO - Successfully completed analysis for station 011_BL_Ma
+2025-02-07 23:50:38,759 - INFO - Processing station 015_BL_Ga
+2025-02-07 23:50:43,027 - INFO - Creating plots for station 015_BL_Ga
+2025-02-07 23:50:55,851 - INFO - Successfully completed analysis for station 015_BL_Ga
+2025-02-07 23:50:55,851 - INFO - Processing station 019_BL_Ag
+2025-02-07 23:51:00,062 - INFO - Creating plots for station 019_BL_Ag
+2025-02-07 23:51:09,125 - INFO - Successfully completed analysis for station 019_BL_Ag
+2025-02-07 23:51:09,126 - INFO - Processing station 022_BL_Sa
+2025-02-07 23:51:13,444 - INFO - Creating plots for station 022_BL_Sa
+2025-02-07 23:51:30,406 - INFO - Successfully completed analysis for station 022_BL_Sa
+2025-02-07 23:51:30,406 - INFO - Processing station 025_BL_So
+2025-02-07 23:51:34,696 - INFO - Creating plots for station 025_BL_So
+2025-02-07 23:51:56,110 - INFO - Successfully completed analysis for station 025_BL_So
+2025-02-07 23:51:56,110 - INFO - Processing station 048_BL_Po
+2025-02-07 23:52:00,392 - INFO - Creating plots for station 048_BL_Po
+2025-02-07 23:52:15,899 - INFO - Successfully completed analysis for station 048_BL_Po
+2025-02-07 23:52:15,900 - INFO - Processing station 056_BL_Fo
+2025-02-07 23:52:20,282 - INFO - Creating plots for station 056_BL_Fo
+2025-02-07 23:52:29,391 - INFO - Successfully completed analysis for station 056_BL_Fo
+2025-02-07 23:52:29,392 - INFO - Processing station 058_BL_Sa
+2025-02-07 23:52:33,947 - INFO - Creating plots for station 058_BL_Sa
+2025-02-07 23:52:52,540 - INFO - Successfully completed analysis for station 058_BL_Sa
+2025-02-07 23:52:52,540 - INFO - Processing station 059_BL_Do
+2025-02-07 23:52:56,993 - INFO - Creating plots for station 059_BL_Do
+2025-02-07 23:53:13,178 - INFO - Successfully completed analysis for station 059_BL_Do
+2025-02-07 23:53:13,179 - INFO - Processing station 076_VI_Tu
+2025-02-07 23:53:17,658 - INFO - Creating plots for station 076_VI_Tu
+2025-02-07 23:53:33,563 - INFO - Successfully completed analysis for station 076_VI_Tu
+2025-02-07 23:53:33,564 - INFO - Processing station 091_BL_Pa
+2025-02-07 23:53:38,135 - INFO - Creating plots for station 091_BL_Pa
+2025-02-07 23:53:47,692 - INFO - Successfully completed analysis for station 091_BL_Pa
+2025-02-07 23:53:47,692 - INFO - Processing station 093_BL_To
+2025-02-07 23:53:52,304 - INFO - Creating plots for station 093_BL_To
+2025-02-07 23:54:15,839 - INFO - Successfully completed analysis for station 093_BL_To
+2025-02-07 23:54:15,840 - INFO - Processing station 096_RO_Ba
+2025-02-07 23:54:20,530 - INFO - Creating plots for station 096_RO_Ba
+2025-02-07 23:54:40,190 - INFO - Successfully completed analysis for station 096_RO_Ba
+2025-02-07 23:54:40,190 - INFO - Processing station 101_RO_Po
+2025-02-07 23:54:44,811 - INFO - Creating plots for station 101_RO_Po
+2025-02-07 23:55:04,281 - INFO - Successfully completed analysis for station 101_RO_Po
+2025-02-07 23:55:04,281 - INFO - Processing station 104_VR_Vi
+2025-02-07 23:55:08,975 - INFO - Creating plots for station 104_VR_Vi
+2025-02-07 23:55:29,675 - INFO - Successfully completed analysis for station 104_VR_Vi
+2025-02-07 23:55:29,675 - INFO - Processing station 105_VI_Lo
+2025-02-07 23:55:34,391 - INFO - Creating plots for station 105_VI_Lo
+2025-02-07 23:55:53,328 - INFO - Successfully completed analysis for station 105_VI_Lo
+2025-02-07 23:55:53,328 - INFO - Processing station 112_RO_Ro
+2025-02-07 23:55:58,125 - INFO - Creating plots for station 112_RO_Ro
+2025-02-07 23:56:15,829 - INFO - Successfully completed analysis for station 112_RO_Ro
+2025-02-07 23:56:15,829 - INFO - Processing station 114_RO_Vi
+2025-02-07 23:56:20,626 - INFO - Creating plots for station 114_RO_Vi
+2025-02-07 23:56:39,731 - INFO - Successfully completed analysis for station 114_RO_Vi
+2025-02-07 23:56:39,731 - INFO - Processing station 115_RO_Ad
+2025-02-07 23:56:44,524 - INFO - Creating plots for station 115_RO_Ad
+2025-02-07 23:57:02,923 - INFO - Successfully completed analysis for station 115_RO_Ad
+2025-02-07 23:57:02,923 - INFO - Processing station 116_RO_Fr
+2025-02-07 23:57:07,840 - INFO - Creating plots for station 116_RO_Fr
+2025-02-07 23:57:28,816 - INFO - Successfully completed analysis for station 116_RO_Fr
+2025-02-07 23:57:28,817 - INFO - Processing station 117_VR_So
+2025-02-07 23:57:33,676 - INFO - Creating plots for station 117_VR_So
+2025-02-07 23:57:53,583 - INFO - Successfully completed analysis for station 117_VR_So
+2025-02-07 23:57:53,584 - INFO - Processing station 118_VR_Ba
+2025-02-07 23:57:58,521 - INFO - Creating plots for station 118_VR_Ba
+2025-02-07 23:58:22,929 - INFO - Successfully completed analysis for station 118_VR_Ba
+2025-02-07 23:58:22,930 - INFO - Processing station 120_VR_Do
+2025-02-07 23:58:27,920 - INFO - Creating plots for station 120_VR_Do
+2025-02-07 23:58:53,242 - INFO - Successfully completed analysis for station 120_VR_Do
+2025-02-07 23:58:53,243 - INFO - Processing station 123_VR_Ar
+2025-02-07 23:58:58,232 - INFO - Creating plots for station 123_VR_Ar
+2025-02-07 23:59:18,385 - INFO - Successfully completed analysis for station 123_VR_Ar
+2025-02-07 23:59:18,385 - INFO - Processing station 125_VR_Sa
+2025-02-07 23:59:23,507 - INFO - Creating plots for station 125_VR_Sa
+2025-02-07 23:59:50,676 - INFO - Successfully completed analysis for station 125_VR_Sa
+2025-02-07 23:59:50,677 - INFO - Processing station 126_VR_Il
+2025-02-07 23:59:55,663 - INFO - Creating plots for station 126_VR_Il
+2025-02-08 00:00:18,500 - INFO - Successfully completed analysis for station 126_VR_Il
+2025-02-08 00:00:18,500 - INFO - Processing station 127_VR_Bu
+2025-02-08 00:00:23,664 - INFO - Creating plots for station 127_VR_Bu
+2025-02-08 00:00:46,166 - INFO - Successfully completed analysis for station 127_VR_Bu
+2025-02-08 00:00:46,166 - INFO - Processing station 128_VR_Gr
+2025-02-08 00:00:51,268 - INFO - Creating plots for station 128_VR_Gr
+2025-02-08 00:01:16,871 - INFO - Successfully completed analysis for station 128_VR_Gr
+2025-02-08 00:01:16,872 - INFO - Processing station 129_VR_Ca
+2025-02-08 00:01:22,139 - INFO - Creating plots for station 129_VR_Ca
+2025-02-08 00:01:43,304 - INFO - Successfully completed analysis for station 129_VR_Ca
+2025-02-08 00:01:43,304 - INFO - Processing station 134_VI_Ma
+2025-02-08 00:01:48,479 - INFO - Creating plots for station 134_VI_Ma
+2025-02-08 00:02:10,522 - INFO - Successfully completed analysis for station 134_VI_Ma
+2025-02-08 00:02:10,523 - INFO - Processing station 135_VI_Ri
+2025-02-08 00:02:15,842 - INFO - Creating plots for station 135_VI_Ri
+2025-02-08 00:02:31,604 - INFO - Successfully completed analysis for station 135_VI_Ri
+2025-02-08 00:02:31,605 - INFO - Processing station 137_VI_Va
+2025-02-08 00:02:36,958 - INFO - Creating plots for station 137_VI_Va
+2025-02-08 00:02:59,024 - INFO - Successfully completed analysis for station 137_VI_Va
+2025-02-08 00:02:59,025 - INFO - Processing station 139_VI_Lu
+2025-02-08 00:03:04,390 - INFO - Creating plots for station 139_VI_Lu
+2025-02-08 00:03:28,233 - INFO - Successfully completed analysis for station 139_VI_Lu
+2025-02-08 00:03:28,234 - INFO - Processing station 140_VI_Pa
+2025-02-08 00:03:33,506 - INFO - Creating plots for station 140_VI_Pa
+2025-02-08 00:03:54,544 - INFO - Successfully completed analysis for station 140_VI_Pa
+2025-02-08 00:03:54,545 - INFO - Processing station 144_VI_Ro
+2025-02-08 00:03:59,926 - INFO - Creating plots for station 144_VI_Ro
+2025-02-08 00:04:23,110 - INFO - Successfully completed analysis for station 144_VI_Ro
+2025-02-08 00:04:23,111 - INFO - Processing station 145_VI_Ba
+2025-02-08 00:04:28,678 - INFO - Creating plots for station 145_VI_Ba
+2025-02-08 00:04:51,006 - INFO - Successfully completed analysis for station 145_VI_Ba
+2025-02-08 00:04:51,007 - INFO - Processing station 147_VI_Br
+2025-02-08 00:04:56,465 - INFO - Creating plots for station 147_VI_Br
+2025-02-08 00:05:21,366 - INFO - Successfully completed analysis for station 147_VI_Br
+2025-02-08 00:05:21,367 - INFO - Processing station 148_VI_Br
+2025-02-08 00:05:26,970 - INFO - Creating plots for station 148_VI_Br
+2025-02-08 00:05:50,900 - INFO - Successfully completed analysis for station 148_VI_Br
+2025-02-08 00:05:50,900 - INFO - Processing station 149_VI_Mo
+2025-02-08 00:05:56,508 - INFO - Creating plots for station 149_VI_Mo
+2025-02-08 00:06:19,452 - INFO - Successfully completed analysis for station 149_VI_Mo
+2025-02-08 00:06:19,453 - INFO - Processing station 159_VE_Po
+2025-02-08 00:06:25,258 - INFO - Creating plots for station 159_VE_Po
+2025-02-08 00:06:46,895 - INFO - Successfully completed analysis for station 159_VE_Po
+2025-02-08 00:06:46,896 - INFO - Processing station 163_VE_No
+2025-02-08 00:06:52,652 - INFO - Creating plots for station 163_VE_No
+2025-02-08 00:07:12,974 - INFO - Successfully completed analysis for station 163_VE_No
+2025-02-08 00:07:12,974 - INFO - Processing station 165_VE_Fo
+2025-02-08 00:07:18,587 - INFO - Creating plots for station 165_VE_Fo
+2025-02-08 00:07:39,949 - INFO - Successfully completed analysis for station 165_VE_Fo
+2025-02-08 00:07:39,950 - INFO - Processing station 166_VE_Lu
+2025-02-08 00:07:45,669 - INFO - Creating plots for station 166_VE_Lu
+2025-02-08 00:08:06,758 - INFO - Successfully completed analysis for station 166_VE_Lu
+2025-02-08 00:08:06,759 - INFO - Processing station 167_VE_Mi
+2025-02-08 00:08:12,531 - INFO - Creating plots for station 167_VE_Mi
+2025-02-08 00:08:31,152 - INFO - Successfully completed analysis for station 167_VE_Mi
+2025-02-08 00:08:31,152 - INFO - Processing station 168_VE_Ch
+2025-02-08 00:08:37,287 - INFO - Creating plots for station 168_VE_Ch
+2025-02-08 00:09:03,021 - INFO - Successfully completed analysis for station 168_VE_Ch
+2025-02-08 00:09:03,021 - INFO - Processing station 169_PD_Ag
+2025-02-08 00:09:08,949 - INFO - Creating plots for station 169_PD_Ag
+2025-02-08 00:09:28,868 - INFO - Successfully completed analysis for station 169_PD_Ag
+2025-02-08 00:09:28,868 - INFO - Processing station 170_PD_Te
+2025-02-08 00:09:34,642 - INFO - Creating plots for station 170_PD_Te
+2025-02-08 00:09:58,911 - INFO - Successfully completed analysis for station 170_PD_Te
+2025-02-08 00:09:58,912 - INFO - Processing station 175_PD_Co
+2025-02-08 00:10:04,904 - INFO - Creating plots for station 175_PD_Co
+2025-02-08 00:10:24,494 - INFO - Successfully completed analysis for station 175_PD_Co
+2025-02-08 00:10:24,494 - INFO - Processing station 179_PD_Ca
+2025-02-08 00:10:30,369 - INFO - Creating plots for station 179_PD_Ca
+2025-02-08 00:10:50,981 - INFO - Successfully completed analysis for station 179_PD_Ca
+2025-02-08 00:10:50,982 - INFO - Processing station 183_TV_Vo
+2025-02-08 00:10:56,890 - INFO - Creating plots for station 183_TV_Vo
+2025-02-08 00:11:19,773 - INFO - Successfully completed analysis for station 183_TV_Vo
+2025-02-08 00:11:19,774 - INFO - Processing station 184_TV_Ze
+2025-02-08 00:11:25,822 - INFO - Creating plots for station 184_TV_Ze
+2025-02-08 00:11:47,405 - INFO - Successfully completed analysis for station 184_TV_Ze
+2025-02-08 00:11:47,405 - INFO - Processing station 185_TV_Va
+2025-02-08 00:11:53,225 - INFO - Creating plots for station 185_TV_Va
+2025-02-08 00:12:15,396 - INFO - Successfully completed analysis for station 185_TV_Va
+2025-02-08 00:12:15,396 - INFO - Processing station 186_TV_Ga
+2025-02-08 00:12:21,417 - INFO - Creating plots for station 186_TV_Ga
+2025-02-08 00:12:46,890 - INFO - Successfully completed analysis for station 186_TV_Ga
+2025-02-08 00:12:46,890 - INFO - Processing station 187_TV_Ro
+2025-02-08 00:12:52,756 - INFO - Creating plots for station 187_TV_Ro
+2025-02-08 00:13:15,616 - INFO - Successfully completed analysis for station 187_TV_Ro
+2025-02-08 00:13:15,616 - INFO - Processing station 188_TV_Vi
+2025-02-08 00:13:21,740 - INFO - Creating plots for station 188_TV_Vi
+2025-02-08 00:13:43,662 - INFO - Successfully completed analysis for station 188_TV_Vi
+2025-02-08 00:13:43,663 - INFO - Processing station 189_TV_Va
+2025-02-08 00:13:50,104 - INFO - Creating plots for station 189_TV_Va
+2025-02-08 00:14:15,086 - INFO - Successfully completed analysis for station 189_TV_Va
+2025-02-08 00:14:15,087 - INFO - Processing station 190_VI_Br
+2025-02-08 00:14:21,275 - INFO - Creating plots for station 190_VI_Br
+2025-02-08 00:14:45,913 - INFO - Successfully completed analysis for station 190_VI_Br
+2025-02-08 00:14:45,913 - INFO - Processing station 191_VI_Mo
+2025-02-08 00:14:52,271 - INFO - Creating plots for station 191_VI_Mo
+2025-02-08 00:15:09,970 - INFO - Successfully completed analysis for station 191_VI_Mo
+2025-02-08 00:15:09,970 - INFO - Processing station 195_TV_Fa
+2025-02-08 00:15:16,198 - INFO - Creating plots for station 195_TV_Fa
+2025-02-08 00:15:40,938 - INFO - Successfully completed analysis for station 195_TV_Fa
+2025-02-08 00:15:40,938 - INFO - Processing station 196_TV_Od
+2025-02-08 00:15:47,150 - INFO - Creating plots for station 196_TV_Od
+2025-02-08 00:16:09,069 - INFO - Successfully completed analysis for station 196_TV_Od
+2025-02-08 00:16:09,070 - INFO - Processing station 197_TV_Ma
+2025-02-08 00:16:15,390 - INFO - Creating plots for station 197_TV_Ma
+2025-02-08 00:16:37,392 - INFO - Successfully completed analysis for station 197_TV_Ma
+2025-02-08 00:16:37,393 - INFO - Processing station 199_BL_Lo
+2025-02-08 00:16:43,640 - INFO - Creating plots for station 199_BL_Lo
+2025-02-08 00:17:01,865 - INFO - Successfully completed analysis for station 199_BL_Lo
+2025-02-08 00:17:01,866 - INFO - Processing station 200_BL_La
+2025-02-08 00:17:08,226 - INFO - Creating plots for station 200_BL_La
+2025-02-08 00:17:33,292 - INFO - Successfully completed analysis for station 200_BL_La
+2025-02-08 00:17:33,292 - INFO - Processing station 203_BL_Pa
+2025-02-08 00:17:39,689 - INFO - Creating plots for station 203_BL_Pa
+2025-02-08 00:17:57,258 - INFO - Successfully completed analysis for station 203_BL_Pa
+2025-02-08 00:17:57,258 - INFO - Processing station 216_BL_Ca
+2025-02-08 00:18:03,784 - INFO - Creating plots for station 216_BL_Ca
+2025-02-08 00:18:16,124 - INFO - Successfully completed analysis for station 216_BL_Ca
+2025-02-08 00:18:16,125 - INFO - Processing station 236_BL_Sa
+2025-02-08 00:18:22,729 - INFO - Creating plots for station 236_BL_Sa
+2025-02-08 00:18:44,580 - INFO - Successfully completed analysis for station 236_BL_Sa
+2025-02-08 00:18:44,580 - INFO - Processing station 237_BL_Co
+2025-02-08 00:18:51,260 - INFO - Creating plots for station 237_BL_Co
+2025-02-08 00:19:09,937 - INFO - Successfully completed analysis for station 237_BL_Co
+2025-02-08 00:19:09,938 - INFO - Processing station 246_BL_Co
+2025-02-08 00:19:16,464 - INFO - Creating plots for station 246_BL_Co
+2025-02-08 00:19:35,043 - INFO - Successfully completed analysis for station 246_BL_Co
+2025-02-08 00:19:35,043 - INFO - Processing station 247_BL_Ca
+2025-02-08 00:19:41,486 - INFO - Creating plots for station 247_BL_Ca
+2025-02-08 00:20:01,856 - INFO - Successfully completed analysis for station 247_BL_Ca
+2025-02-08 00:20:01,856 - INFO - Processing completed. Successful: 71, Failed: 0, Total: 71
+2025-02-08 00:20:02,143 - INFO - Results saved!
+2025-02-08 00:20:02,143 - INFO - Saving the results into .csv files 
+2025-02-08 00:20:02,433 - INFO - Results saved!
