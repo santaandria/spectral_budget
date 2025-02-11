@@ -71,7 +71,7 @@ def compute_wavelet_stats(wT, quantile_based=True):
     return tuple(results.T)  # Transpose to get separate arrays for each statistic
 
 
-def wavelet_psd(wT, scales, delta_t):
+def wavelet_psd(wT, scales, delta_t, angular=True):
     """
     Compute the wavelet power spectral density E(K) where k is the wave number
     Parameters:
@@ -84,16 +84,15 @@ def wavelet_psd(wT, scales, delta_t):
     K: scale
 
     """
-    K = (
-        2 * np.pi / scales
-    )  # Wavenumber (necessary for comparing wavelet power spectrum with Fourier spectrum)
+    C = 2 * np.pi if angular else 1
+    K = (C / scales) if angular else (1 / scales)
     psd = [
-        np.mean(w**2) * delta_t / (2 * np.pi * np.log(2)) for w in wT
+        np.mean(w**2) * delta_t / (C * np.log(2)) for w in wT
     ]  # Power spectral density (Energy in each wavenumber band dK)
-    return psd, K
+    return np.asarray(psd), np.asarray(K)
 
 
-def fourier_psd(x, delta_t, window="hann", nperseg=1024):
+def fourier_psd(x, delta_t, window="hann", nperseg=1024, angular=True):
     """
     Computes the Fourier power density spectrum
     Return:
@@ -101,10 +100,11 @@ def fourier_psd(x, delta_t, window="hann", nperseg=1024):
     K: Wave number
 
     """
+    C = 2 * np.pi if angular else 1
     f, P = welch(x, window=window, nperseg=nperseg, fs=1)  # fs=assumed to 1
-    K = 2 * np.pi * f * (1 / delta_t)
-    psd = P * delta_t / (2 * np.pi)  # psd = E/dK where dK = 2*np.pi*df*(1/delta_t)
-    return psd, K
+    K = C * f * (1 / delta_t)
+    psd = P * delta_t / C  # psd = E/dK where dK = 2*np.pi*df*(1/delta_t)
+    return np.asarray(psd), np.asarray(K)
 
 
 def wavelet_transform(x, psi, delta_t, mode="per"):
@@ -142,7 +142,7 @@ def lorentzian(x, A, B, c):
     return A / (1 + (x / (B + 1e-15)) ** c)
 
 
-def fit_psd_power_law(psd, K, integral_scale):
+def fit_psd_power_law(psd, K, integral_scale, angular=True):
     """
     Fit a power law to the power spectral density using piecewise regression in log-log space
     Args:
@@ -155,8 +155,9 @@ def fit_psd_power_law(psd, K, integral_scale):
     """
     x = np.log10(K)
     y = np.log10(psd)
+    C = 2 * np.pi if angular else 1
     pw_fit = piecewise_regression.Fit(
-        x, y, n_breakpoints=1, start_values=[np.log10(integral_scale)]
+        x, y, n_breakpoints=1, start_values=[np.log10(C / integral_scale)]
     )
     results = pw_fit.get_results()["estimates"]
 
@@ -167,10 +168,12 @@ def fit_psd_power_law(psd, K, integral_scale):
     return c, c_ci, breakpt
 
 
-def lorentzian_spectra(wavelets,integral_scale,fourier = None,return_err = False):
+def lorentzian_spectra(
+    wavelets, integral_scale, fourier=None, return_err=False, angular=True
+):
     """
     Analyze both wavelet and Fourier spectra using Lorentzian fitting.
-    
+
     Parameters
     wavelets : Tuple[np.ndarray, np.ndarray]
         Tuple of (power spectral density, wavenumbers) for wavelet analysis
@@ -180,54 +183,56 @@ def lorentzian_spectra(wavelets,integral_scale,fourier = None,return_err = False
         Optional tuple of (power spectral density, wavenumbers) for Fourier analysis
     return_err : bool, optional
         If True, returns error estimates for fitted parameters
-        
+
     Returns
         Dictionary containing results for wavelet analysis and optionally Fourier analysis
     """
 
     psd_w, K_w = map(np.asarray, wavelets)
-    
+
+    C = 2 * np.pi if angular else 1
+
     # Initial parameter estimation
-    c, _, breakpt = fit_psd_power_law(psd_w, K_w, integral_scale)
-    params_init = [integral_scale / np.pi, 1, -c]
-    
+    c, _, breakpt = fit_psd_power_law(psd_w, K_w, integral_scale, angular)
+    params_init = [integral_scale / np.pi / C, 10**breakpt, -c]
+
     # Fit wavelet spectrum
-    res_w = fit_lorentzian(psd_w, K_w, params_init, return_err=return_err, bootstrap_samples=1000)
-    
+    res_w = fit_lorentzian(
+        psd_w, K_w, params_init, return_err=return_err, bootstrap_samples=1000
+    )
+
     if return_err:
-        res_w[0]['breakpoint'] = 10**breakpt
+        res_w[0]["breakpoint"] = 10**breakpt
     else:
-        res_w['breakpoint'] = 10**breakpt
-        
+        res_w["breakpoint"] = 10**breakpt
+
     if fourier is None:
         return res_w
-        
+
     # Process Fourier spectrum if provided
     psd_F, K_F = map(np.asarray, fourier)
-    
+
     # Filter Fourier data to match wavelet range
     mask = K_F < max(K_w)
     psd_F, K_F = psd_F[mask], K_F[mask]
     K_F[K_F == 0] = 1e-15  # Avoid log(0)
-    
+
     # Use wavelet results as initial parameters for Fourier fit
     wavelet_params = res_w[0] if return_err else res_w
-    params_init = [wavelet_params['A'],wavelet_params['B'],wavelet_params['c']]
-    
-    # Fit Fourier spectrum
-    res_F = fit_lorentzian(psd_F, K_F, params_init, return_err=return_err, bootstrap_samples=1000)
-    
-    return {
-        'wavelet': res_w,
-        'fourier': res_F
-    }
+    params_init = [wavelet_params["A"], wavelet_params["B"], wavelet_params["c"]]
 
-    
+    # Fit Fourier spectrum
+    res_F = fit_lorentzian(
+        psd_F, K_F, params_init, return_err=return_err, bootstrap_samples=1000
+    )
+
+    return {"wavelet": res_w, "fourier": res_F}
+
 
 def fit_lorentzian(psd, K, params_init, return_err=True, bootstrap_samples=1000):
     """
     Fit a Lorentzian function to the power spectrum density using non-linear least squares.
-    
+
     Parameters
     ----------
     psd : np.ndarray
@@ -240,7 +245,7 @@ def fit_lorentzian(psd, K, params_init, return_err=True, bootstrap_samples=1000)
         If True, returns standard error estimates via bootstrap resampling
     bootstrap_samples : int, optional
         Number of bootstrap resamples for error estimation
-        
+
     Returns
     -------
     Union[Dict[str, float], Tuple[Dict[str, float], np.ndarray]]
@@ -248,20 +253,20 @@ def fit_lorentzian(psd, K, params_init, return_err=True, bootstrap_samples=1000)
             Dictionary containing fitted parameters {'A', 'B', 'c'}
         If return_err is True:
             Tuple of (parameters dictionary, standard errors array)
-    
+
     Notes
     -----
     The Lorentzian function is fitted in log-space for numerical stability.
     Error estimates are computed using bootstrap resampling when return_err=True.
     """
     psd, K = np.asarray(psd), np.asarray(K)
-    
+
     def log_lorentzian(params: tuple, u):
         A, B, c = params
         eps = 1e-15
         # logaddexp(x1,x2) = log(exp(x1) + exp(x2)) is numerically more stable as it handles large values of x better.
         return np.log(max(A, eps)) - np.logaddexp(0, c * (u - np.log(max(B, eps))))
-    
+
     popt, pcov = curve_fit(
         lambda u, A, B, c: log_lorentzian((A, B, c), u),
         np.log(K),
@@ -276,36 +281,35 @@ def fit_lorentzian(psd, K, params_init, return_err=True, bootstrap_samples=1000)
         "c": popt[2],
     }
 
-
     if not return_err:
         return params
-        
+
     if bootstrap_samples <= 0:
         return params, np.sqrt(np.diag(pcov))
-        
+
     # Perform bootstrap resampling for error estimation
     boot_params = []
     rng = np.random.default_rng()
-    
+
     for _ in range(bootstrap_samples):
         indices = rng.integers(0, len(psd), size=len(psd))
         psd_resampled = psd[indices]
         K_resampled = K[indices]
-        
+
         try:
             popt_resampled, _ = curve_fit(
                 lambda u, A, B, c: log_lorentzian((A, B, c), u),
                 np.log(K_resampled),
                 np.log(psd_resampled),
-                p0=params_init
+                p0=params_init,
             )
             boot_params.append(popt_resampled)
         except RuntimeError:
             continue
-            
+
     boot_params = np.array(boot_params)
     boot_se = np.std(boot_params, axis=0)
-    
+
     return params, boot_se
 
 
@@ -329,7 +333,12 @@ def spectral_analysis(wT, scales, timeseries, delta_t, integral_scale, ax=None):
     # Discard the smallest and the largest scale from the analysis
     psd_w, K_w, scales = psd_w[1:-1], K_w[1:-1], scales[1:-1]
     # Fit Lorentzian
-    lorentzian_params = lorentzian_spectra((psd_w, K_w), integral_scale=integral_scale, return_err=True, fourier=(psd_F, K_F))
+    lorentzian_params = lorentzian_spectra(
+        (psd_w, K_w),
+        integral_scale=integral_scale,
+        return_err=True,
+        fourier=(psd_F, K_F),
+    )
 
     # Create visualization
     if not ax:
@@ -340,7 +349,7 @@ def spectral_analysis(wT, scales, timeseries, delta_t, integral_scale, ax=None):
     ax.plot(K_w, psd_w, "k-o", label="Wavelet", markersize=6, markerfacecolor="None")
 
     # Plot Lorentzian fit
-    lorentzian_param = lorentzian_params['wavelet'][0]
+    lorentzian_param = lorentzian_params["wavelet"][0]
     KK = np.logspace(np.log10(min(K_w)), np.log10(max(K_w)), 100)
     ax.plot(
         KK,
@@ -590,7 +599,7 @@ def create_combined_plot(
 
     # Scale-wise PDF
     params, bin_x_list, emp_pdf_list = fit_scale_wise_pdf(
-        wT[1:], scales[1:], lorentzian_param['wavelet'][0]["breakpoint"]
+        wT[1:], scales[1:], lorentzian_param["wavelet"][0]["breakpoint"]
     )
     _ = plot_scale_wise_pdf(params, bin_x_list, emp_pdf_list, scales[1:], ax=ax5)
 
@@ -644,7 +653,12 @@ def save_analysis_results(
         os.makedirs(directory, exist_ok=True)
 
     # Save lorentzian param as JSON
-    save_lorentzian_param(directories['lorentzian'], lorentzian_param, station_id, fname_template="{station_id}_lorentzian.json")
+    save_lorentzian_param(
+        directories["lorentzian"],
+        lorentzian_param,
+        station_id,
+        fname_template="{station_id}_lorentzian.json",
+    )
 
     # Helper function to save list of numpy arrays
     def save_array_list(data_list, directory, filename):
@@ -696,10 +710,12 @@ def load_analysis_results(station_id, base_path="./output"):
     return lorentzian_param, params, bin_x_list, emp_pdf_list
 
 
-def save_lorentzian_param(outdir, lorentzian_params, station_id, fname_template="{station_id}_lorentzian.json"):
+def save_lorentzian_param(
+    outdir, lorentzian_params, station_id, fname_template="{station_id}_lorentzian.json"
+):
     """
     Save Lorentzian parameters to a JSON file, converting any NumPy arrays to lists.
-    
+
     Parameters
     ----------
     outdir : str
@@ -712,13 +728,13 @@ def save_lorentzian_param(outdir, lorentzian_params, station_id, fname_template=
     filename_template : str, optional
         Template for the output filename, default: "{station_id}_lorentzian.json"
     """
-    
+
     def convert_numpy_to_serializable(obj):
         """
         Recursively convert NumPy arrays to lists in nested data structures.
         Parameters
         obj : Any
-            The object to convert. Can be a NumPy array, list, dictionary, 
+            The object to convert. Can be a NumPy array, list, dictionary,
             or nested combination of these.
         Returns
         Any
@@ -727,12 +743,15 @@ def save_lorentzian_param(outdir, lorentzian_params, station_id, fname_template=
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         elif isinstance(obj, dict):
-            return {key: convert_numpy_to_serializable(value) for key, value in obj.items()}
+            return {
+                key: convert_numpy_to_serializable(value) for key, value in obj.items()
+            }
         elif isinstance(obj, list):
             return [convert_numpy_to_serializable(item) for item in obj]
         elif isinstance(obj, tuple):
             return tuple(convert_numpy_to_serializable(item) for item in obj)
         return obj
+
     os.makedirs(outdir, exist_ok=True)
 
     # Convert all NumPy arrays to lists recursively
@@ -740,23 +759,22 @@ def save_lorentzian_param(outdir, lorentzian_params, station_id, fname_template=
     output_file = os.path.join(outdir, fname_template.format(station_id=station_id))
 
     # Save to JSON file
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(serializable_lorentzian, f, indent=4)
-
-
 
 
 def load_lorentzian_param(filepath):
     """
     Load Lorentzian parameters from a JSON file converting lists to NumPy arrays.
     """
+
     def convert_lists_to_numpy(obj):
         """
         Recursively convert lists to NumPy arrays in nested data structures.
         """
         if isinstance(obj, dict):
             return {key: convert_lists_to_numpy(value) for key, value in obj.items()}
-        
+
         if isinstance(obj, list):
             # Try to convert the entire list to a NumPy array
             try:
@@ -767,15 +785,16 @@ def load_lorentzian_param(filepath):
                     return arr
             except (ValueError, TypeError):
                 pass
-            
+
             # If conversion failed or produced object array, process elements individually
             return [convert_lists_to_numpy(item) for item in obj]
-        
+
         return obj
+
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
-        
-    with open(filepath, 'r') as f:
+
+    with open(filepath, "r") as f:
         data = json.load(f)
-        
+
     return convert_lists_to_numpy(data)
