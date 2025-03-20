@@ -1,9 +1,0 @@
-2025-02-06 18:12:40,693 - INFO - Starting analysis pipeline
-2025-02-06 18:12:40,698 - INFO - Loaded 71 stations for processing
-2025-02-06 18:12:43,657 - INFO - Processing station 003_BL_Ar
-2025-02-06 18:12:50,267 - INFO - Creating plots for station 003_BL_Ar
-2025-02-06 18:13:13,442 - INFO - Successfully completed analysis for station 003_BL_Ar
-2025-02-06 18:13:13,442 - INFO - Processing completed. Successful: 1, Failed: 0, Total: 71
-2025-02-06 18:13:13,455 - INFO - Results saved!
-2025-02-06 18:13:13,455 - INFO - Saving the results into .csv files 
-2025-02-06 18:13:13,465 - INFO - Results saved!
