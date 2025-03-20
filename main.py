@@ -1,219 +1,1043 @@
-import warnings
-import numpy as np
+# %%
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from src.helpers import *
 import pywt
-from src.helpers.maps_helper import create_veneto_map
-from src.helpers.analysis import create_combined_plot, load_analysis_results
+from scipy.special import gamma
+from scipy.optimize import minimize, curve_fit, least_squares
+from scipy.integrate import quad, simpson, trapezoid
+from scipy.stats import kurtosis, skew, bootstrap
+
+
+from statsmodels.tsa.stattools import acf
+import statsmodels.api as sm
+from scipy.integrate import simpson, romb, quad
+from scipy.signal import welch
+from collections import Counter
+from src.helpers.maps_helper import *
+import warnings
+
+import matplotlib.gridspec as gridspec
+import matplotlib.image as mpimg
+import plotly.graph_objects as go
+
 import os
-import logging
-from datetime import datetime
-from tqdm import tqdm
-
-DATA_FOLDER = "/mnt/d/climate_data/ARPAV_5min/filled_sampling/"
-DELTA_T = 5 / 60
+import json
 
 
-def setup_logging(output_dir="output/logs"):
-    """Set up logging configuration"""
-    os.makedirs(output_dir, exist_ok=True)
+# %%
+###################################################################################
+###################################################################################
+def conceptual_plot(savepath=None):
+    def low_freq_correction_factor(A, integral_scale, alpha, f):
+        E0 = integral_scale / np.pi
+        return ((E0 / A) + alpha * f**2) / (1 + alpha * f**2)
 
-    # Create a timestamp for the log file
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(output_dir, f"processing_{timestamp}.log")
+    def cutoff(beta, f1, f, d):
+        return np.exp(-beta * ((f / f1) ** d - (10 / f1) ** d))
 
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
+    def generalized_spectrum(f, A, f0, c, integral_scale, alpha, beta, f1, d):
+        Fl = low_freq_correction_factor(A, integral_scale, alpha, f)
+        Fh = cutoff(beta, f1, f, d)
+        lorentz = lorentzian(f, A, f0, c)
+        return Fl * lorentz * Fh
+
+    def compute_source(E, f, u0, D0):
+        dE_df = np.gradient(E, f, edge_order=2)
+        J = u0 * f**2 * E - D0 * f**3 * dE_df
+        return np.gradient(J, f, edge_order=2)
+
+    def dissipation(E, f, nu):
+        dE_df = np.gradient(E, f, edge_order=2)
+        return -nu * f**3 * np.gradient(dE_df, f, edge_order=2)
+
+    # Parameters
+    f = np.logspace(-8, 3, 10000)
+    A, f0, c = 10, 0.01, 0.8
+    alpha = 1e14  # transition Fh
+    integral_scale = 3
+    beta = 10
+    f1 = 1e2
+    d = 2
+    u0 = 1
+    D0 = 1
+    nu = 0.8
+
+    E = generalized_spectrum(f, A, f0, c, integral_scale, alpha, beta, f1, d)
+    S = compute_source(E, f, u0, D0)
+    D = dissipation(E, f, nu)
+
+    fig, axs = plt.subplots(2, 1, figsize=(5, 6), tight_layout=True)
+    axs[0].plot(f, E, "-r", linewidth=2, zorder=99)
+    axs[0].axhline(y=integral_scale / np.pi, linestyle="--", c="grey", linewidth=0.5)
+
+    upper_axis_settings = {
+        "ylabel": "$\log \hat{E} \, (\\tilde{f\,}) $",
+        "xlabel": "$\log \\tilde{f\,}$",
+        "xscale": "log",
+        "yscale": "log",
+        "ylim": (1e-3, 5e1),
+        "title": "(a)",
+    }
+    configure_axis(axs[0], upper_axis_settings)
+
+    axs[1].plot(f, -S, "-k", linewidth=2)
+    axs[1].plot(f, D, "-r", linewidth=1)
+    axs[1].plot(f, S - D, "-b", linewidth=1)
+
+    lower_axis_settings = {
+        "ylabel": "$\partial_{f} \ J$",
+        "xlabel": "$\log \\tilde{f\,}$",
+        "xscale": "log",
+        "title": "(b)",
+    }
+    configure_axis(axs[1], lower_axis_settings)
+
+    for ax in axs:
+        ax.axvline(x=f0, linestyle="--", c="grey", linewidth=0.5)
+        ax.axvspan(1e-6, 10, color="0.90")
+        ax.tick_params(
+            labelleft=False,
+            labelbottom=False,
+            bottom=False,
+            top=False,
+            left=False,
+            right=False,
+            which="both",
+        )
+    if savepath:
+        plt.savefig(savepath, dpi=96, format="pdf")
+    plt.show()
+
+
+def plot_lorentzian_map(
+    lparam_df, stations_df, veneto_map, veneto_map_inset, save_path=None
+):
+    """
+    Args:
+    res (dict): {station: {'A': value, 'B': value, 'c': value}}
+    """
+
+    lorentzian_df = lparam_df.merge(
+        stations_df[["station_id", "Lat", "Lon"]], on="station_id", how="left"
     )
-    return logging.getLogger(__name__)
 
+    # Parameter settings for Lorentzian
+    lorentz_params_settings = {
+        "A": {"cmap": "plasma", "title": "$A \ [h]$"},
+        "B": {"cmap": "plasma", "title": "$f_0 \ [h^{-1}]$"},
+        "c": {"cmap": "plasma", "title": "$c$"},
+    }
+    labels = ["(a)", "(b)", "(c)"]
+    # Create figure
+    fig = plt.figure(figsize=(15, 5))
+    gs = fig.add_gridspec(1, 3, wspace=0)
 
-def initialize_environment():
-    """Initialize environment settings and create necessary directories"""
-    # Suppress warnings
-    warnings.filterwarnings("ignore")
+    # Create maps for each parameter
+    for i, (param, settings) in enumerate(lorentz_params_settings.items()):
+        print(f"Generating plots for {param} ...")
+        map_fpath = f"output/param_maps/lorentzian_{param}.png"
 
-    # Set random seed for reproducibility
-    np.random.seed(0)
+        # Choose map type based on first or subsequent plots
+        current_map = veneto_map_inset if i == 0 else veneto_map
 
-    # Create output directories
-    directories = ["output/maps", "output/fig", "output/logs"]
-    for directory in directories:
-        os.makedirs(directory, exist_ok=True)
-
-
-def process_station(row, index, stations, veneto_map, psi, logger):
-    """Process a single station's data"""
-    try:
-        station_id = row["station_id"]
-        logger.info(f"Processing station {station_id}")
-
-        # Create map
-        map_fpath = f"./output/maps/{station_id}_map.png"
-        veneto_map.add_scatter(
-            data_df=stations.loc[[index]],
-            data_col="Elv",
+        # Add scatter plot to map
+        current_map.add_scatter(
+            data_df=lorentzian_df,
+            data_col=param,
             crs=4326,
             temporary=True,
             to_show=["raster", "base"],
             x_col="Lon",
             y_col="Lat",
             s=100,
-            cmap="r",
-            cb_label="Elevation [m]",
+            cmap=settings["cmap"],
+            cb_label=settings["title"],
             save_filepath=map_fpath,
         )
 
-        # Create and save plots
-        logger.info(f"Creating plots for station {station_id}")
-        fig = create_combined_plot(row, map_fpath, DELTA_T, psi, DATA_FOLDER)
-        fig_path = f"./output/fig/{station_id}_analysis.pdf"
-        fig.savefig(fig_path, dpi=300, format="pdf")
+        # Add subplot
+        ax = fig.add_subplot(gs[0, i])
+        img = mpimg.imread(map_fpath)
+        ax.imshow(img)
+        ax.axis("off")
+        ax.set_title(labels[i], fontsize=12)
+        os.remove(map_fpath)
 
-        logger.info(f"Successfully completed analysis for station {station_id}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error processing station {row['station_id']}: {str(e)}")
-        return False
+    # Save the complete figure
+    if save_path:
+        plt.savefig(save_path, dpi=300, format="pdf")
+        plt.close()
 
 
-def results_to_csv(stations_df):
-    station_data = {"q": {}, "beta": {}, "a": {}, "c": {}}
+def fit_psd_power_law(psd, K, integral_scale, angular=True):
+    """
+    Fit a power law to the power spectral density using piecewise regression in log-log space
+    Args:
+        psd: Power spectral density values
+        K: Wavenumber values
+        integral_scale: Integral scale parameter
 
-    lorentzian_param_row = []
+    Returns:
+        tuple: (power law exponent, confidence interval, breakpoint)
+    """
+    x = np.log10(K)
+    y = np.log10(psd)
+    C = 2 * np.pi if angular else 1
+    pw_fit = piecewise_regression.Fit(
+        x, y, n_breakpoints=1, start_values=[np.log10(C / integral_scale)]
+    )
+    results = pw_fit.get_results()["estimates"]
 
-    # First pass: collect all τ values to determine the complete set of columns
-    all_tau_values = set()
-    for index, row in stations_df.iterrows():
+    c = results["alpha2"]["estimate"]
+    c_ci = results["alpha2"]["confidence_interval"]
+    breakpt = results["breakpoint1"]["estimate"]
+
+    return c, c_ci, breakpt
+
+
+def lorentzian_spectra(
+    wavelets, integral_scale, fourier=None, return_err=False, angular=True
+):
+    """
+    Analyze both wavelet and Fourier spectra using Lorentzian fitting.
+
+    Parameters
+    wavelets : Tuple[np.ndarray, np.ndarray]
+        Tuple of (power spectral density, wavenumbers) for wavelet analysis
+    integral_scale : float
+        Integral scale parameter for initialization
+    fourier : Optional[Tuple[np.ndarray, np.ndarray]]
+        Optional tuple of (power spectral density, wavenumbers) for Fourier analysis
+    return_err : bool, optional
+        If True, returns error estimates for fitted parameters
+
+    Returns
+        Dictionary containing results for wavelet analysis and optionally Fourier analysis
+    """
+
+    psd_w, K_w = map(np.asarray, wavelets)
+    integral_limit = (min(K_w), max(K_w))
+
+    psd_w, K_w = psd_w[:-1], K_w[:-1]  # Ignore largest scale in the lorentzian fit
+
+    C = 2 * np.pi if angular else 1
+
+    # Initial parameter estimation
+    c, _, breakpt = fit_psd_power_law(psd_w, K_w, integral_scale, angular=angular)
+    params_init = [integral_scale / np.pi / C, 10**breakpt, -c]
+
+    # Fit wavelet spectrum
+    res_w = fit_lorentzian(
+        psd_w,
+        K_w,
+        params_init,
+        integral_limit=integral_limit,
+        return_err=return_err,
+        bootstrap_samples=1000,
+    )
+
+    if return_err:
+        res_w[0]["breakpoint"] = 10**breakpt
+    else:
+        res_w["breakpoint"] = 10**breakpt
+
+    if fourier is None:
+        return res_w
+
+    # Process Fourier spectrum if provided
+    psd_F, K_F = map(np.asarray, fourier)
+
+    # Filter Fourier data to match wavelet range
+    mask = K_F < max(K_w)
+    psd_F, K_F = psd_F[mask], K_F[mask]
+    K_F[K_F == 0] = 1e-15  # Avoid log(0)
+
+    # Use wavelet results as initial parameters for Fourier fit
+    wavelet_params = res_w[0] if return_err else res_w
+    params_init = [wavelet_params["A"], wavelet_params["B"], wavelet_params["c"]]
+
+    # Fit Fourier spectrum
+    res_F = fit_lorentzian(
+        psd_F, K_F, params_init, return_err=return_err, bootstrap_samples=1000
+    )
+
+    return {"wavelet": res_w, "fourier": res_F}
+
+
+def fit_lorentzian(
+    psd, K, params_init, integral_limit, return_err=True, bootstrap_samples=1000
+):
+    """
+    Fit a Lorentzian function to the power spectrum density using non-linear least squares.
+
+    Parameters
+    ----------
+    psd : np.ndarray
+        Power spectral density values
+    K : np.ndarray
+        Wavenumber values
+    params_init : List[float]
+        Initial parameter guesses [A, B, c] for the Lorentzian function
+    return_err : bool, optional
+        If True, returns standard error estimates via bootstrap resampling
+    bootstrap_samples : int, optional
+        Number of bootstrap resamples for error estimation
+
+    Returns
+    -------
+    Union[Dict[str, float], Tuple[Dict[str, float], np.ndarray]]
+        If return_err is False:
+            Dictionary containing fitted parameters {'A', 'B', 'c'}
+        If return_err is True:
+            Tuple of (parameters dictionary, standard errors array)
+
+    Notes
+    -----
+    The Lorentzian function is fitted in log-space for numerical stability.
+    Error estimates are computed using bootstrap resampling when return_err=True.
+    """
+    psd, K = np.asarray(psd), np.asarray(K)
+
+    def log_lorentzian(params: tuple, u):
+        A, B, c = params
+        eps = 1e-15
+        # logaddexp(x1,x2) = log(exp(x1) + exp(x2)) is numerically more stable as it handles large values of x better.
+        return np.log(max(A, eps)) - np.logaddexp(0, c * (u - np.log(max(B, eps))))
+
+    popt, pcov = curve_fit(
+        lambda u, A, B, c: log_lorentzian((A, B, c), u),
+        np.log(K),
+        np.log(psd),
+        p0=params_init,
+    )
+    # perr = np.sqrt(np.diag(pcov))
+
+    ###### Add AUC = 1 constraint to refine B ######
+    def residuals(p, K, psd):
+        integral = quad(
+            lambda f: lorentzian(f, popt[0], p, popt[2]), *integral_limit, epsrel=1e-9
+        )[0]
+        penalization = abs(1 - integral) * 10000
+        return (
+            np.log(psd)
+            - log_lorentzian((popt[0], p, popt[2]), np.log(K))
+            - penalization
+        )
+
+    out = least_squares(residuals, popt[1], args=(K, psd))
+
+    params = {
+        "A": popt[0],
+        "B": out.x[0],
+        "c": popt[2],
+    }
+
+    if not return_err:
+        return params
+
+    # Perform bootstrap resampling for error estimation
+    boot_params = []
+    rng = np.random.default_rng()
+
+    for _ in range(bootstrap_samples):
+        indices = rng.integers(0, len(psd), size=len(psd))
+        psd_resampled = psd[indices]
+        K_resampled = K[indices]
+
         try:
-            lorentzian_param, params, *_ = load_analysis_results(
-                station_id=row["station_id"]
+            popt_resampled, _ = curve_fit(
+                lambda u, A, B, c: log_lorentzian((A, B, c), u),
+                np.log(K_resampled),
+                np.log(psd_resampled),
+                p0=(params["A"], params["B"], params["c"]),
             )
-            all_tau_values.update(range(1, len(params) + 1))
-        except:
+            # popt_resampled_refined = least_squares(residuals,
+            #             params['B'],
+            #             args=(K_w, psd_w))
+
+            # boot_params.append((popt_resampled[0], popt_resampled_refined.x[0], popt_resampled[2]))
+            boot_params.append(popt_resampled)
+        except RuntimeError:
             continue
 
-    # Create column names for each τ value
-    tau_columns = [f"tau_{i}" for i in sorted(all_tau_values)]
+    boot_params = np.array(boot_params)
+    boot_se = np.std(boot_params, axis=0)
 
-    # Second pass: collect data for each station
-    for index, row in stations_df.iterrows():
+    return params, boot_se
 
-        try:
-            lorentzian_params, params, *_ = load_analysis_results(
-                station_id=row["station_id"]
+
+def compute_spectra(stations, delta_t, fit_lorentzian=False, return_wT=False):
+    psi = pywt.Wavelet("haar")
+    spectra = {}
+    lparams = {}
+    std_error = {}
+    int_scale = {}
+    wavelet_coeff = {}
+
+    for station in stations:
+        df = pd.read_csv(
+            # "/mnt/d/climate_data/ARPAV_5min/filled_sampling/" + station + ".csv",
+            "data/filled_sampling/" + station + ".csv",
+            parse_dates=["datetime"],
+            index_col="datetime",
+        )
+        data = df["PRCP"].values
+
+        # Normalize
+        x = data - np.nanmean(data)
+        x = x / np.nanstd(x)
+
+        # ACF Analysis
+        _, _, integral_scale, _ = acf_analysis(x, delta_t)
+
+        # Wavelet Transform
+        wT, tau = wavelet_transform(x, psi, delta_t, mode="per")
+        psd_w, K_w = wavelet_psd(wT, tau, delta_t, angular=False)
+        psd_F, K_F = fourier_psd(
+            x, delta_t, window="hann", nperseg=8 * 8192, angular=False
+        )
+        spectra.update({station: {"wavelet": (psd_w, K_w), "fourier": (psd_F, K_F)}})
+        int_scale.update({station: integral_scale})
+        if return_wT:
+            wavelet_coeff.update({station: {"wT": wT, "scales": tau}})
+
+        if fit_lorentzian:
+            print(f"------------ Processing {station} ------------")
+            try:
+                p, perr = lorentzian_spectra(
+                    (psd_w, K_w),
+                    integral_scale=integral_scale,
+                    return_err=True,
+                    angular=False,
+                )
+                lparams.update({station: p})
+                std_error.update({station: perr})
+
+                ## Check
+                area = quad(
+                    lambda f: lorentzian(f, p["A"], p["B"], p["c"]),
+                    min(K_w),
+                    max(K_w),
+                    epsrel=1e-9,
+                )[0]
+                print(
+                    f"{station} & A = {p['A']:.2f} +/- {perr[0]:.2f} & f0 = {p['B']:.3f}  +/- {perr[1]:.3f} & c = {p['c']:.2f} +/- {perr[2]:.2f} & area = {area:.4f} \\\\"
+                )
+
+            except:
+                print("!!!!!!!! OPTIMIZATION FAILED !!!!!!!!")
+                continue
+
+    if fit_lorentzian:
+        lparams_df = pd.DataFrame.from_dict(lparams, orient="index").rename_axis(
+            "station_id"
+        )
+        std_error_df = (
+            pd.DataFrame.from_dict(std_error, orient="index")
+            .rename_axis("station_id")
+            .rename(columns={0: "A", 1: "B", 2: "c"})
+        )
+        lparams_df.to_csv("output/spectral_budget/fit/lparams.csv")
+        std_error_df.to_csv("output/spectral_budget/fit/std_error.csv")
+
+    if return_wT:
+        return spectra, wavelet_coeff, int_scale
+    return spectra, int_scale
+
+
+###################################################################################
+###################################################################################
+# %%
+#### Loading data #####
+stations_df = pd.read_csv("data/gt_30y_lt_1perc_missing.csv")
+stations = stations_df["station_id"].values
+veneto_map_inset = create_veneto_map(cb=1, show=False, add_inset=True)
+veneto_map = create_veneto_map(cb=1, show=False, add_inset=False)
+
+stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
+
+delta_t = 5 / 60
+
+# %%
+lparams = pd.read_csv("output/spectral_budget/fit/lparams.csv").set_index("station_id")
+std_err = pd.read_csv(
+    "output/spectral_budget/fit/std_error.csv", index_col="station_id"
+)
+# lparams.distance_to_coast = lparams.distance_to_coast / 1000 #km
+
+# %%
+##### Plotting Parameter Map #####
+print("------------ Plotting Map ------------")
+plot_lorentzian_map(
+    lparams,
+    stations_df,
+    veneto_map,
+    veneto_map_inset,
+    save_path="output/spectral_budget/lorentzian_parameters_maps.pdf",
+)
+plt.close()
+# %%
+##### Conceptual Plot ######
+conceptual_plot("output/spectral_budget/conceptual_plot.pdf")
+
+
+# %%
+###### Spectra Plot #########
+def add_extra_wT(ax, station):
+    df = pd.read_csv(
+        # "/mnt/d/climate_data/ARPAV_5min/filled_sampling/" + station + ".csv",
+        "data/filled_sampling/" + station + ".csv",
+        parse_dates=["datetime"],
+        index_col="datetime",
+    )
+    data = df["PRCP"].values
+
+    # Normalize
+    x = data - np.nanmean(data)
+    x = x / np.nanstd(x)
+
+    colors = ["g", "y", "b"]
+    markers = ["s", "v", "x"]
+    for i, wav in enumerate(["sym3", "coif3", "db2"]):
+        psi = pywt.Wavelet(wav)
+        J = pywt.dwt_max_level(len(x), psi)
+        wT_ = pywt.wavedec(x, psi, level=J, mode="per")[::-1][:-1]
+        scales_ = 2 ** (np.arange(1, J + 1)) * delta_t
+        psd_w_, K_w_ = wavelet_psd(wT_, scales_, delta_t, angular=False)
+        ax.scatter(K_w_, psd_w_, s=20, c=colors[i], marker=markers[i], zorder=3)
+
+
+stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
+spectra, wavelet_coeff, int_scale = compute_spectra(
+    stations, delta_t=delta_t, fit_lorentzian=False, return_wT=True
+)
+
+labels = ["(a)", "(b)", "(c)"]
+fig, axs = plt.subplots(1, 3, figsize=(9, 3), tight_layout=True)
+
+for col, ax in enumerate(axs):
+    station = stations[col]
+    ax.plot(*spectra[station]["fourier"][::-1], alpha=0.8, linewidth=1, c="k", zorder=2)
+    ax.scatter(*spectra[station]["wavelet"][::-1], s=30, fc="None", ec="r", zorder=4)
+    add_extra_wT(ax, station)
+    p = lparams.loc[station]
+    KK = np.logspace(
+        np.log10(min(spectra[station]["wavelet"][1])),
+        np.log10(max(spectra[station]["wavelet"][1])),
+        100,
+    )
+    ax.plot(KK, lorentzian(KK, p["A"], p["B"], p["c"]), "-r", linewidth=2, zorder=4)
+    axis_settings = {
+        "ylabel": "$\hat{E} \, (f \,)  \ [h]$",
+        "xlabel": "$f \ [h^{-1}]$",
+        "xscale": "log",
+        "yscale": "log",
+        "ylim": (1e-2, 5e1),
+        "title": labels[col],
+    }
+
+    # Context
+    map_ax = ax.inset_axes([0.05, 0.05, 0.4, 0.4])
+    map_fpath = f"./output/maps/no_inset/{station}_map.png"
+
+    img = mpimg.imread(map_fpath)
+    map_ax.imshow(img)
+    map_ax.axis("off")
+
+    ax.axhline(y=int_scale[station] / np.pi, linestyle="--", c="k", linewidth=0.5)
+    ax.add_artist(
+        plt.Rectangle(
+            (1, ax.get_ylim()[0]),
+            1e3,
+            1e3,
+            alpha=0.5,
+            zorder=1,
+            color="grey",
+            ec="None",
+        )
+    )  # 1H region where artificial smoothing (viscosity) due to sensor sampling averaging takes effect (Paschalis paper)
+
+    configure_axis(ax, axis_settings)
+    add_time_axis(ax, wavelet_coeff[station]["scales"], wavenumber=False, loc="top")
+
+plt.savefig("output/spectral_budget/energy_spectra.pdf", dpi=600, format="pdf")
+plt.show()
+# plt.close()
+# %%
+############ Parameter Correlations ###################
+fig, axs = plt.subplots(1, 3, figsize=(9, 3), tight_layout=True)
+
+axs[0].scatter(lparams["A"], lparams["B"], fc="None", ec="k", linewidth=1)
+axs[1].scatter(lparams["A"], lparams["c"], fc="None", ec="k", linewidth=1)
+axs[2].scatter(lparams["B"], lparams["c"], fc="None", ec="k", linewidth=1)
+
+axes_labels = [
+    ("$A \ [h]$", "$f_0 \ [h^{-1}]$"),
+    ("$A \ [h]$", "$c$"),
+    ("$f_0 \ [h^{-1}]$", "$c$"),
+]
+
+for i, ax in enumerate(axs):
+    ax.set_xlabel(axes_labels[i][0])
+    ax.set_ylabel(axes_labels[i][1])
+    ax.set_title(labels[i])
+    # if i == 0:
+    #     ax.set_yscale('log')
+    #     ax.set_ylim((1e-3, 1e-1))
+    # if i == 2:
+    #     ax.set_xscale('log')
+    #     ax.set_xlim((1e-3, 1e-1))
+
+plt.savefig("output/spectral_budget/parameter_correlations.pdf", dpi=96, format="pdf")
+plt.show()
+# plt.close()
+# %%
+######### Elevation - Distance to coast plot ##########
+params = ["A", "B", "c"]
+labels = ["(a)", "(b)", "(c)"]
+cb_labels = ["$A \ [h]$", "$f_0 \ [h^{-1}]$", "$c$"]
+
+fig = plt.figure(figsize=(9, 7), constrained_layout=True)
+(top, bottom) = fig.subfigures(2, 1)
+
+# top.suptitle('Top')
+axs_top = top.subplots(1, 3)
+for i, ax in enumerate(axs_top):
+    sc = ax.scatter(
+        lparams["distance_to_coast"],
+        lparams["Elv"],
+        c=lparams[params[i]],
+        cmap="plasma",
+        edgecolors="k",
+        alpha=0.75,
+        s=50,
+    )
+    ax.set_xlabel("Distance to Coast [km]")
+    ax.set_ylabel("Elevation [m]")
+    ax.set_title(labels[i])
+    # ax.set_yscale('log')
+    fig.colorbar(sc, ax=ax, label=cb_labels[i], orientation="horizontal")
+
+# bottom.suptitle('Bottom')
+axs_bottom = bottom.subplots(1, 3)
+labels = ["(e)", "(f)", "(g)"]
+plain = lparams.loc[lparams["Elv"] < 250]
+
+axs_bottom[0].scatter(
+    plain["distance_to_coast"],
+    plain["A"],
+    c=plain["Elv"],
+    cmap="copper",
+    edgecolors="k",
+    alpha=0.75,
+    s=50,
+)
+axs_bottom[1].scatter(
+    plain["distance_to_coast"],
+    plain["B"],
+    c=plain["Elv"],
+    cmap="copper",
+    edgecolors="k",
+    alpha=0.75,
+    s=50,
+)
+sc = axs_bottom[2].scatter(
+    plain["distance_to_coast"],
+    plain["c"],
+    c=plain["Elv"],
+    cmap="copper",
+    edgecolors="k",
+    alpha=0.75,
+    s=50,
+)
+
+for i, ax in enumerate(axs_bottom):
+    ax.set_xlabel("Distance to Coast [km]")
+    ax.set_ylabel(cb_labels[i])
+    ax.set_title(labels[i])
+    cb = fig.colorbar(sc, ax=ax, orientation="horizontal")
+    cb.set_label(label="Elevation [m]", weight=400)
+
+plt.savefig("output/spectral_budget/parameters_features.pdf", dpi=96, format="pdf")
+plt.show()
+
+# %%
+###### Compute Source #######
+
+
+def source_term(f, A, B, c, m):
+    h = f / B
+    return (
+        -(
+            A
+            * f
+            * u0
+            * (
+                c**2 * m * h**c * (-1 + h**c)
+                - c * h**c * (1 + h**c) * (2 * m - 1)
+                - 2 * (1 + h**c) ** 2
             )
-            # Process Lorentzian Fit results
-            lorentzian_params, params, _, _ = load_analysis_results(
-                station_id=row["station_id"]
-            )
-            print(f'----- Processing {row["station_id"]} -----')
-            lorentzian_param = lorentzian_params['wavelet'][0] ## Change here
-            lorentzian_param["station_id"] = row["station_id"]
-            del lorentzian_param["breakpoint"]
-            lorentzian_param_row.append(lorentzian_param)
-
-            # Create dictionaries for each parameter with NaN for missing values
-            station_id = row["station_id"]
-            # Initialize all columns with NaN for this station
-            if station_id not in station_data["q"]:
-                station_data["q"][station_id] = {col: np.nan for col in tau_columns}
-                station_data["beta"][station_id] = {col: np.nan for col in tau_columns}
-                station_data["a"][station_id] = {col: np.nan for col in tau_columns}
-                station_data["c"][station_id] = {col: np.nan for col in tau_columns}
-
-            # Fill in the available values
-            for tau_idx, param in enumerate(params, start=1):
-                col_name = f"tau_{tau_idx}"
-                station_data["q"][station_id][col_name] = param[0]
-                station_data["beta"][station_id][col_name] = param[1]
-                station_data["a"][station_id][col_name] = param[2]
-                station_data["c"][station_id][col_name] = param[3]
-        except:
-            continue
-    if len(lorentzian_param_row) > 0:
-        # Create DataFrames from collected data
-        lorentzian_df = pd.DataFrame.from_dict(lorentzian_param_row, orient="columns")
-        q_df = pd.DataFrame.from_dict(
-            station_data["q"], orient="index", columns=tau_columns
         )
-        beta_df = pd.DataFrame.from_dict(
-            station_data["beta"], orient="index", columns=tau_columns
+        / (1 + h**c) ** 3
+    )
+
+
+def normalized_source(f, A, B, c, m, int_scale):
+    normalization = source_term(1 / int_scale, A, B, c, m)
+    return source_term(f, A, B, c, m) / normalization
+
+
+f = np.logspace(-6, 1, 100)
+u0 = 1
+m_values = [0, 1, 10]
+
+params_df = lparams.copy()
+for m in m_values:
+    # params_df[f"source_m{m}"] = params_df.apply(lambda row: source_term(f, row["A"], row["B"], row["c"], m), axis=1)
+    params_df[f"source_m{m}"] = params_df.apply(
+        lambda row: normalized_source(
+            f, row["A"], row["B"], row["c"], m, row["int_scale"]
+        ),
+        axis=1,
+    )
+    params_df["f_normalized"] = params_df.apply(
+        lambda row: row["int_scale"] * f, axis=1
+    )
+
+orographic = params_df.loc[params_df["Elv"] > 250]
+coast = params_df.loc[(params_df["Elv"] < 250) & (params_df["distance_to_coast"] < 30)]
+mixed = params_df.loc[(params_df["Elv"] < 250) & (params_df["distance_to_coast"] >= 30)]
+
+fig = plt.figure(figsize=(9, 9), constrained_layout=True)
+(fig1, fig2, fig3) = fig.subfigures(3, 1)
+labels = [
+    "(a) Elevation $\geq$ 250m",
+    "(b)  Elevation $lt$ 250m and Distance to Coast $\leq$ 30km",
+    "(c) Elevation $lt$ 250m and Distance to Coast $gt$ 30km",
+]
+dfs = [orographic, coast, mixed]
+
+for i, fig in enumerate((fig1, fig2, fig3)):
+    axs = fig.subplots(1, 3)
+    fig.suptitle(labels[i])
+
+    for col, m in enumerate(m_values):
+        y = np.vstack(dfs[i][f"source_m{m}"].values)
+        # x = np.array([f]*len(y))
+        x = np.vstack(dfs[i]["f_normalized"].values)
+        axs[col].plot(x.T, y.T, "k-", linewidth=0.3)
+        axs[col].plot(x.mean(axis=0), y.mean(axis=0), "r--", linewidth=3)
+        axs[col].set_xscale("log")
+        axs[col].set_xlabel("$\Gamma_0 f$")
+        axs[col].set_ylabel("$S(f)~/~S(\Gamma_0 ^{-1})$")
+        axs[col].set_title(f"m={m}")
+        axs[col].axhline(y=1, linestyle="--", c="grey", linewidth=0.5)
+        axs[col].axvline(x=1, linestyle="--", c="grey", linewidth=0.5)
+        axs[col].set_xlim((1e-6, 1e2))
+        axs[col].set_ylim((0, 3))
+
+plt.savefig("output/spectral_budget/source_term.pdf", dpi=96, format="pdf")
+plt.show()
+# %%
+
+
+def shannon_entropy(A, B, c, f_min, f_max):
+    # Return normalized shannon entropy
+    def entropy_integrand(f):
+        p = lorentzian(f, A, B, c)
+        return -p * np.log(p) if p > 0 else 0  # Avoid log(0) issues
+
+    # Compute entropy using numerical integration
+    entropy, _ = quad(entropy_integrand, f_min, f_max)
+    return entropy / np.log(f_max - f_min)
+
+
+lparams["Shannon_Entropy"] = lparams.apply(
+    lambda row: shannon_entropy(
+        row["A"], row["B"], row["c"], row["min_K"], row["max_K"]
+    ),
+    axis=1,
+)
+# Fit hyperplane
+# Assuming lparams is your existing DataFrame with B, c, and Shannon_Entropy columns
+
+X = lparams[["B", "c"]].values
+X = sm.add_constant(X)  # constant intercept
+y = lparams["Shannon_Entropy"].values
+
+# OLS regression model
+model = sm.OLS(y, X).fit()
+
+# print(model.summary())
+
+intercept = model.params[0]
+slope_B = model.params[1]
+slope_c = model.params[2]
+
+print(
+    f"Hyperplane equation: H(f) = {slope_B:.3f} × B + {slope_c:.3f} × c + {intercept:.3f}"
+)
+
+
+B_min, B_max = lparams["B"].min(), lparams["B"].max()
+c_min, c_max = lparams["c"].min(), lparams["c"].max()
+
+B_range = np.linspace(B_min, B_max, 10)
+c_range = np.linspace(c_min, c_max, 10)
+B_grid, c_grid = np.meshgrid(B_range, c_range)
+z_grid = intercept + slope_B * B_grid + slope_c * c_grid
+
+
+# %%
+fig = go.Figure()
+
+fig.add_trace(
+    go.Surface(
+        x=B_grid,
+        y=c_grid,
+        z=z_grid,
+        colorscale="Reds",
+        opacity=0.6,
+        name="Regression Plane",
+        showscale=False,
+        contours={
+            "x": {"show": True, "width": 2, "color": "darkred"},
+            "y": {"show": True, "width": 2, "color": "darkred"},
+            "z": {"show": False},
+        },
+        hidesurface=False,
+    )
+)
+
+fig.add_trace(
+    go.Scatter3d(
+        x=lparams["B"],
+        y=lparams["c"],
+        z=lparams["Shannon_Entropy"],
+        mode="markers",
+        marker=dict(
+            size=12,
+            color=lparams["Shannon_Entropy"],
+            colorscale="plasma",
+            line=dict(color="black", width=5),
+            opacity=0.9,
+        ),
+        name="Data Points",
+    )
+)
+
+camera = dict(
+    up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=-2, y=1.5, z=0.5)
+)
+
+fig.update_layout(
+    scene_camera=camera,
+    font=dict(size=15, family="Arial"),
+    scene=dict(
+        xaxis=dict(
+            tickvals=[0.02, 0.04, 0.06],
+            range=[0, 0.08],
+            title=dict(
+                text="f<sub>0</sub>",
+                font=dict(size=24, weight=500),
+            ),
+            backgroundcolor="white",
+            gridcolor="lightgrey",
+            showbackground=True,
+            zerolinecolor="white",
+        ),
+        yaxis=dict(
+            title=dict(
+                text="c",
+                font=dict(size=24, weight=500),
+            ),
+            backgroundcolor="white",
+            gridcolor="lightgrey",
+            showbackground=True,
+            zerolinecolor="white",
+        ),
+        zaxis=dict(
+            title=dict(
+                text=r"H(f)",
+                font=dict(size=24, weight=500),
+            ),
+            backgroundcolor="white",
+            gridcolor="lightgrey",
+            showbackground=True,
+            zerolinecolor="white",
+        ),
+    ),
+    width=1000,
+    height=800,
+    margin=dict(r=5, l=5, b=5, t=5),
+)
+
+fig.add_annotation(
+    x=0.1,
+    y=0.9,
+    xref="paper",
+    yref="paper",
+    text=f"H(f) = {slope_B:.3f} × f<sub>0</sub> - {np.abs(slope_c):.3f} × c + {intercept:.3f}<br>R² = {model.rsquared:.2f}",
+    showarrow=False,
+    font=dict(size=18),
+    bgcolor="white",
+    bordercolor="black",
+    borderwidth=1,
+    align="center",
+)
+fig.write_image(
+    "output/spectral_budget/shannon_entropy_regression.png",
+    width=1000,
+    height=800,
+    scale=10,
+)
+fig.show()
+# %%
+veneto_map_inset.add_scatter(
+    data_df=lparams,
+    data_col="Shannon_Entropy",
+    crs=4326,
+    temporary=True,
+    to_show=["raster", "base"],
+    x_col="Lon",
+    y_col="Lat",
+    s=100,
+    cmap="plasma",
+    cb_label="Normalized Shannon Entropy",
+    save_filepath="output/spectral_budget/shannon_entropy.png",
+)
+
+# %%
+############## Seasonal Analysis ##############
+psi = pywt.Wavelet("haar")
+spectra = {}
+lparams = {}
+std_error = {}
+int_scale = {}
+
+stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
+for station in stations:
+    df = pd.read_csv(
+        # "/mnt/d/climate_data/ARPAV_5min/filled_sampling/" + station + ".csv",
+        "data/filled_sampling/" + station + ".csv",
+        parse_dates=["datetime"],
+        index_col="datetime",
+    )
+
+    summer = df.copy()
+    summer.loc[~summer.index.month.isin([6, 7, 8]), "PRCP"] = np.nan  # JJA
+
+    winter = df.copy()
+    winter.loc[~winter.index.month.isin([12, 1, 2]), "PRCP"] = np.nan  # DJF
+
+    result = {}
+    ints = {}
+
+    for season, data in zip(["summer", "winter"], [summer, winter]):
+        data = data["PRCP"].values
+
+        # Normalize
+        x = data - np.nanmean(data)
+        x = x / np.nanstd(x)
+
+        # ACF Analysis
+        _, _, integral_scale, _ = acf_analysis(x, delta_t)
+
+        # Wavelet Transform
+        wT, tau = wavelet_transform(x, psi, delta_t, mode="per")
+        f = 1 / tau
+
+        psd = np.array([np.nanmean(w**2) * delta_t / np.log(2) for w in wT])
+        psd, f, tau = psd[psd > 0], f[psd > 0], tau[psd > 0]
+        result.update({season: (psd, f)})
+        ints.update({season: integral_scale})
+
+    spectra.update({station: result})
+    int_scale.update({station: ints})
+
+
+# %%
+labels = ["(a)", "(b)", "(c)"]
+fig, axs = plt.subplots(1, 3, figsize=(9, 3), tight_layout=True)
+psd1_A = [3e-2, 5e-2, 5e-2]
+
+for col, ax in enumerate(axs):
+    station = stations[col]
+    # ax.scatter(*spectra[station]['summer'][::-1], s=30, fc="None", ec='r', zorder=4, marker= "o")
+    # ax.scatter(*spectra[station]['winter'][::-1], s=30, fc="None", ec='b', zorder=4, marker= "^")
+    ax.plot(*spectra[station]["summer"][::-1], "r-", zorder=4, marker="o")
+    ax.plot(*spectra[station]["winter"][::-1], "b-", zorder=4, marker="s")
+    # Lorentzian
+    # p = lparams.loc[station]
+    # KK = np.logspace(np.log10(min(spectra[station]['wavelet'][1])), np.log10(max(spectra[station]['wavelet'][1])), 100)
+    # ax.plot(
+    #     KK,
+    #     lorentzian(KK, p["A"], p["B"], p["c"]),
+    #     "-r",
+    #     linewidth=2,
+    #     zorder=4
+    # )
+    k = np.logspace(-0.9, -0.1, 3)
+    psd1 = psd1_A[col] * k**-1
+    psd2 = 7e-1 * k**-0.5
+    ax.plot(k, psd1, "k--", linewidth=1)
+    ax.plot(k, psd2, "k--", linewidth=1)
+
+    ax.text(
+        k[1] - 0.05,
+        psd1[1],
+        "$\sim k^{-1}$",
+        fontsize=8,
+        color="k",
+        ha="right",
+        va="top",
+    )
+    ax.text(
+        k[0] + 0.1,
+        psd2[0] - 0.5,
+        "$\sim k^{-0.5}$",
+        fontsize=8,
+        color="k",
+        ha="left",
+        va="bottom",
+    )
+
+    axis_settings = {
+        "ylabel": "$\hat{E} \, (f \,)  \ [h]$",
+        "xlabel": "$f \ [h^{-1}]$",
+        "xscale": "log",
+        "yscale": "log",
+        "ylim": (1e-2, 5e1),
+        "title": labels[col],
+    }
+
+    # Context
+    map_ax = ax.inset_axes([0.05, 0.05, 0.4, 0.4])
+    map_fpath = f"./output/maps/no_inset/{station}_map.png"
+
+    img = mpimg.imread(map_fpath)
+    map_ax.imshow(img)
+    map_ax.axis("off")
+
+    # ax.axhline(y=int_scale[station]['summer']/np.pi, linestyle=':', c='r', linewidth=0.5)
+    # ax.axhline(y=int_scale[station]['winter']/np.pi, linestyle=':', c='b', linewidth=0.5)
+    ax.add_artist(
+        plt.Rectangle(
+            (1, ax.get_ylim()[0]),
+            1e3,
+            1e3,
+            alpha=0.5,
+            zorder=1,
+            color="grey",
+            ec="None",
         )
-        a_df = pd.DataFrame.from_dict(
-            station_data["a"], orient="index", columns=tau_columns
-        )
-        c_df = pd.DataFrame.from_dict(
-            station_data["c"], orient="index", columns=tau_columns
-        )
+    )  # 1H region where artificial smoothing (viscosity) due to sensor sampling averaging takes effect (Paschalis paper)
 
-        q_df.index.name = "station_id"
-        beta_df.index.name = "station_id"
-        a_df.index.name = "station_id"
-        c_df.index.name = "station_id"
+    configure_axis(ax, axis_settings)
+    add_time_axis(ax, tau, wavenumber=False, loc="top")
+plt.savefig("output/spectral_budget/seasonal_analysis.pdf", dpi=600, format="pdf")
+plt.show()
 
-        # Create output directory if it doesn't exist
-        os.makedirs("output/analysis_results_csv/", exist_ok=True)
-
-        # Save each DataFrame to CSV
-        lorentzian_df.to_csv("output/analysis_results_csv/lorentzian_parameters.csv")
-        q_df.to_csv("output/analysis_results_csv/q_parameters.csv")
-        beta_df.to_csv("output/analysis_results_csv/beta_parameters.csv")
-        a_df.to_csv("output/analysis_results_csv/a_parameters.csv")
-        c_df.to_csv("output/analysis_results_csv/c_parameters.csv")
-
-
-def main():
-    # Set up logging
-    logger = setup_logging()
-    logger.info("Starting analysis pipeline")
-
-    try:
-        # Initialize environment and parameters
-        initialize_environment()
-
-        # Load station data
-        # Global
-        psi = pywt.Wavelet("coif3")
-        stations = pd.read_csv("data/gt_30y_lt_1perc_missing.csv")
-        logger.info(f"Loaded {len(stations)} stations for processing")
-
-        # Create base map
-        veneto_map = create_veneto_map(cb=0, show=False)
-
-        # Process each station with progress bar
-        successful = 0
-        failed = 0
-
-        for index, row in tqdm(
-            stations.iterrows(), total=len(stations), desc="Processing stations"
-        ):
-            if process_station(row, index, stations, veneto_map, psi, logger):
-                successful += 1
-            else:
-                failed += 1
-
-        # Log summary
-        logger.info(
-            f"Processing completed. "
-            f"Successful: {successful}, Failed: {failed}, "
-            f"Total: {len(stations)}"
-        )
-        results_to_csv(stations)
-        logger.info("Results saved!")
-
-    except Exception as e:
-        logger.error(f"Critical error in main process: {str(e)}")
-        raise
-    # Log summary
-    if successful > 0:
-        logger.info(f"Saving the results into .csv files ")
-        results_to_csv(stations)
-        logger.info("Results saved!")
-
-
-if __name__ == "__main__":
-    main()
+# %%
