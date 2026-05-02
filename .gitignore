@@ -1,2 +1,4 @@
-data/
+data/turbulence/
+data/shp/
 output/
+src/__pycache__

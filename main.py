@@ -25,6 +25,8 @@ import plotly.graph_objects as go
 import os
 import json
 
+PRCP_FOLDER = "/mnt/d/climate_data/ARPAV_5min/filled_sampling/"
+
 
 # %%
 ###################################################################################
@@ -120,7 +122,7 @@ def plot_lorentzian_map(
     """
 
     lorentzian_df = lparam_df.merge(
-        stations_df[["station_id", "Lat", "Lon"]], on="station_id", how="left"
+        stations_df[["station_id"]], on="station_id", how="left"
     )
 
     # Parameter settings for Lorentzian
@@ -378,8 +380,7 @@ def compute_spectra(stations, delta_t, fit_lorentzian=False, return_wT=False):
 
     for station in stations:
         df = pd.read_csv(
-            # "/mnt/d/climate_data/ARPAV_5min/filled_sampling/" + station + ".csv",
-            "data/filled_sampling/" + station + ".csv",
+            PRCP_FOLDER + station + ".csv",
             parse_dates=["datetime"],
             index_col="datetime",
         )
@@ -487,8 +488,7 @@ conceptual_plot("output/spectral_budget/conceptual_plot.pdf")
 ###### Spectra Plot #########
 def add_extra_wT(ax, station):
     df = pd.read_csv(
-        # "/mnt/d/climate_data/ARPAV_5min/filled_sampling/" + station + ".csv",
-        "data/filled_sampling/" + station + ".csv",
+        PRCP_FOLDER + station + ".csv",
         parse_dates=["datetime"],
         index_col="datetime",
     )
@@ -540,7 +540,7 @@ for col, ax in enumerate(axs):
 
     # Context
     map_ax = ax.inset_axes([0.05, 0.05, 0.4, 0.4])
-    map_fpath = f"./output/maps/no_inset/{station}_map.png"
+    map_fpath = f"./output/maps/{station}_map.png"
 
     img = mpimg.imread(map_fpath)
     map_ax.imshow(img)
@@ -600,7 +600,7 @@ labels = ["(a)", "(b)", "(c)"]
 cb_labels = ["$A \ [h]$", "$f_0 \ [h^{-1}]$", "$c$"]
 
 fig = plt.figure(figsize=(9, 7), constrained_layout=True)
-(top, bottom) = fig.subfigures(2, 1)
+top, bottom = fig.subfigures(2, 1)
 
 # top.suptitle('Top')
 axs_top = top.subplots(1, 3)
@@ -663,10 +663,9 @@ for i, ax in enumerate(axs_bottom):
 plt.savefig("output/spectral_budget/parameters_features.pdf", dpi=96, format="pdf")
 plt.show()
 
+
 # %%
 ###### Compute Source #######
-
-
 def source_term(f, A, B, c, m):
     h = f / B
     return (
@@ -711,7 +710,7 @@ coast = params_df.loc[(params_df["Elv"] < 250) & (params_df["distance_to_coast"]
 mixed = params_df.loc[(params_df["Elv"] < 250) & (params_df["distance_to_coast"] >= 30)]
 
 fig = plt.figure(figsize=(9, 9), constrained_layout=True)
-(fig1, fig2, fig3) = fig.subfigures(3, 1)
+fig1, fig2, fig3 = fig.subfigures(3, 1)
 labels = [
     "(a) Elevation $\geq$ 250m",
     "(b)  Elevation $lt$ 250m and Distance to Coast $\leq$ 30km",
@@ -740,9 +739,9 @@ for i, fig in enumerate((fig1, fig2, fig3)):
 
 plt.savefig("output/spectral_budget/source_term.pdf", dpi=96, format="pdf")
 plt.show()
+
+
 # %%
-
-
 def shannon_entropy(A, B, c, f_min, f_max):
     # Return normalized shannon entropy
     def entropy_integrand(f):
@@ -920,8 +919,7 @@ int_scale = {}
 stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
 for station in stations:
     df = pd.read_csv(
-        # "/mnt/d/climate_data/ARPAV_5min/filled_sampling/" + station + ".csv",
-        "data/filled_sampling/" + station + ".csv",
+        PRCP_FOLDER + station + ".csv",
         parse_dates=["datetime"],
         index_col="datetime",
     )
@@ -965,20 +963,8 @@ psd1_A = [3e-2, 5e-2, 5e-2]
 
 for col, ax in enumerate(axs):
     station = stations[col]
-    # ax.scatter(*spectra[station]['summer'][::-1], s=30, fc="None", ec='r', zorder=4, marker= "o")
-    # ax.scatter(*spectra[station]['winter'][::-1], s=30, fc="None", ec='b', zorder=4, marker= "^")
     ax.plot(*spectra[station]["summer"][::-1], "r-", zorder=4, marker="o")
     ax.plot(*spectra[station]["winter"][::-1], "b-", zorder=4, marker="s")
-    # Lorentzian
-    # p = lparams.loc[station]
-    # KK = np.logspace(np.log10(min(spectra[station]['wavelet'][1])), np.log10(max(spectra[station]['wavelet'][1])), 100)
-    # ax.plot(
-    #     KK,
-    #     lorentzian(KK, p["A"], p["B"], p["c"]),
-    #     "-r",
-    #     linewidth=2,
-    #     zorder=4
-    # )
     k = np.logspace(-0.9, -0.1, 3)
     psd1 = psd1_A[col] * k**-1
     psd2 = 7e-1 * k**-0.5
@@ -1015,14 +1001,12 @@ for col, ax in enumerate(axs):
 
     # Context
     map_ax = ax.inset_axes([0.05, 0.05, 0.4, 0.4])
-    map_fpath = f"./output/maps/no_inset/{station}_map.png"
+    map_fpath = f"./output/maps/{station}_map.png"
 
     img = mpimg.imread(map_fpath)
     map_ax.imshow(img)
     map_ax.axis("off")
 
-    # ax.axhline(y=int_scale[station]['summer']/np.pi, linestyle=':', c='r', linewidth=0.5)
-    # ax.axhline(y=int_scale[station]['winter']/np.pi, linestyle=':', c='b', linewidth=0.5)
     ax.add_artist(
         plt.Rectangle(
             (1, ax.get_ylim()[0]),
