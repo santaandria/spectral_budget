@@ -15,9 +15,9 @@ class RegionalMap:
     A class to handle regional map visualizations with raster data.
     """
 
-    def __init__(self, region_name, crs, figsize=(5, 5), cb_space=0):
+    def __init__(self, region_name, crs, figsize=(5, 6), cb_space=0):
         """cb_space define a blank space for colorbar"""
-        self.pad = 0.05  # Pad w.r.t to width
+        self.pad = 0.06  # Pad w.r.t to width
         self.region_name = region_name
         self.cb_space = cb_space
         self.width = figsize[0]
@@ -49,7 +49,7 @@ class RegionalMap:
         if gridlines:
             self.m.add_gridlines(
                 d=[gridlines["longitudes"], gridlines["latitudes"]],
-                labels=True,
+                labels={"fontsize": 14, "offset": 15},
                 linewidth=0.5,
                 alpha=0.5,
                 linestyle="--",
@@ -80,7 +80,7 @@ class RegionalMap:
         # TODO: Add colorbar option
 
     def add_context_inset(
-        self, region_shp, country_shp, inset_extent, position=(0.25, 0.8)
+        self, region_shp, country_shp, inset_extent, position=(0.21, 0.83)
     ):
         """
         Add inset map showing region's location in broader context.
@@ -229,7 +229,7 @@ class RegionalMap:
                     (self.cb_space - 2 * self.pad * self.width)
                     / (self.width + self.cb_space),
                 ),
-                label=data_col if not cb_label else cb_label,
+                # label=data_col if not cb_label else cb_label,
                 # hist_size=1,
                 divider_linestyle={"color": "w", "linestyle": "-"},
             )
@@ -251,15 +251,17 @@ class RegionalMap:
                 right=False,
                 which="both",
             )
+            cb.set_labels(cb_label=data_col if not cb_label else cb_label, fontsize=14)
+            cb.ax_cb.tick_params(labelsize=12)
 
     def style_map(
-        self, extent, compass_pos=(0.9, 0.9), scalebar_pos=(0.6, 0.05), scale=25000
+        self, extent, compass_pos=(0.9, 0.85), scalebar_pos=(0.1, 0.1), scale=25000
     ):
         """
         Add map styling elements with customizable positions.
         """
         self.m.set_extent(extent, crs=ccrs.PlateCarree())
-        self.m.add_compass(pos=compass_pos, style="compass")
+        self.m.add_compass(pos=compass_pos, style="compass", scale=20)
 
         self.m.add_scalebar(
             preset="bw",
@@ -269,8 +271,8 @@ class RegionalMap:
             scale=scale,  # In meters
             scale_props=dict(width=3, colors=("k", "lightgrey")),
             label_props=dict(
-                scale=2,
-                offset=1.5,
+                scale=4.5,
+                offset=2.5,
                 rotation=90,
                 every=2,
                 family="Fira Sans",

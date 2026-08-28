@@ -26,6 +26,7 @@ import os
 import json
 
 PRCP_FOLDER = "/mnt/d/climate_data/ARPAV_5min/filled_sampling/"
+RECOMPUTE_LPARAMS = False
 
 
 # %%
@@ -139,7 +140,7 @@ def plot_lorentzian_map(
     # Create maps for each parameter
     for i, (param, settings) in enumerate(lorentz_params_settings.items()):
         print(f"Generating plots for {param} ...")
-        map_fpath = f"output/param_maps/lorentzian_{param}.png"
+        map_fpath = f"output/lorentzian_{param}.png"
 
         # Choose map type based on first or subsequent plots
         current_map = veneto_map_inset if i == 0 else veneto_map
@@ -440,8 +441,8 @@ def compute_spectra(stations, delta_t, fit_lorentzian=False, return_wT=False):
             .rename_axis("station_id")
             .rename(columns={0: "A", 1: "B", 2: "c"})
         )
-        lparams_df.to_csv("output/spectral_budget/fit/lparams.csv")
-        std_error_df.to_csv("output/spectral_budget/fit/std_error.csv")
+        lparams_df.to_csv("data/lparams.csv")
+        std_error_df.to_csv("output/lorentzian_std_error.csv")
 
     if return_wT:
         return spectra, wavelet_coeff, int_scale
@@ -454,38 +455,52 @@ def compute_spectra(stations, delta_t, fit_lorentzian=False, return_wT=False):
 #### Loading data #####
 stations_df = pd.read_csv("data/gt_30y_lt_1perc_missing.csv")
 stations = stations_df["station_id"].values
-veneto_map_inset = create_veneto_map(cb=1, show=False, add_inset=True)
-veneto_map = create_veneto_map(cb=1, show=False, add_inset=False)
-
-stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
-
 delta_t = 5 / 60
 
-# %%
-lparams = pd.read_csv("output/spectral_budget/fit/lparams.csv").set_index("station_id")
-std_err = pd.read_csv(
-    "output/spectral_budget/fit/std_error.csv", index_col="station_id"
-)
-# lparams.distance_to_coast = lparams.distance_to_coast / 1000 #km
+if RECOMPUTE_LPARAMS:
+    spectra, int_scale = compute_spectra(
+        stations, delta_t=delta_t, fit_lorentzian=True, return_wT=False
+    )
+    lparams = pd.read_csv("data/lparams.csv")
+    lparams = lparams.merge(
+        stations_df[["station_id", "Elv", "Lat", "Lon", "distance_to_coast"]],
+        on="station_id",
+    )
+    lparams["int_scale"] = lparams["station_id"].map(int_scale)
+    min_K = {stn: min(v["wavelet"][1]) for stn, v in spectra.items()}
+    max_K = {stn: max(v["wavelet"][1]) for stn, v in spectra.items()}
 
+    lparams = lparams.assign(
+        min_K=lparams["station_id"].map(min_K),
+        max_K=lparams["station_id"].map(max_K),
+    )
+
+    lparams = lparams.set_index("station_id")
+    lparams.to_csv("data/lparams.csv")
+else:
+    lparams = pd.read_csv("data/lparams.csv").set_index("station_id")
+
+std_err = pd.read_csv("output/lorentzian_std_error.csv", index_col="station_id")
+veneto_map_inset = create_veneto_map(cb=1.5, show=False, add_inset=True)
+veneto_map = create_veneto_map(cb=1.5, show=False, add_inset=False)
 # %%
-##### Plotting Parameter Map #####
+##### Fig 3: Plotting Parameter Map #####
 print("------------ Plotting Map ------------")
 plot_lorentzian_map(
     lparams,
     stations_df,
     veneto_map,
     veneto_map_inset,
-    save_path="output/spectral_budget/lorentzian_parameters_maps.pdf",
+    save_path="output/lorentzian_parameters_maps.pdf",
 )
 plt.close()
 # %%
-##### Conceptual Plot ######
-conceptual_plot("output/spectral_budget/conceptual_plot.pdf")
+##### Fig 1: Conceptual Plot ######
+conceptual_plot("output/conceptual_plot.pdf")
 
 
 # %%
-###### Spectra Plot #########
+###### Fig 2: Spectra Plot #########
 def add_extra_wT(ax, station):
     df = pd.read_csv(
         PRCP_FOLDER + station + ".csv",
@@ -540,7 +555,7 @@ for col, ax in enumerate(axs):
 
     # Context
     map_ax = ax.inset_axes([0.05, 0.05, 0.4, 0.4])
-    map_fpath = f"./output/maps/{station}_map.png"
+    map_fpath = f"./data/maps/{station}.png"
 
     img = mpimg.imread(map_fpath)
     map_ax.imshow(img)
@@ -562,16 +577,40 @@ for col, ax in enumerate(axs):
     configure_axis(ax, axis_settings)
     add_time_axis(ax, wavelet_coeff[station]["scales"], wavenumber=False, loc="top")
 
-plt.savefig("output/spectral_budget/energy_spectra.pdf", dpi=600, format="pdf")
+plt.savefig("output/energy_spectra.pdf", dpi=600, format="pdf")
 plt.show()
 # plt.close()
 # %%
-############ Parameter Correlations ###################
+############ Fig 4: Parameter Correlations ###################
 fig, axs = plt.subplots(1, 3, figsize=(9, 3), tight_layout=True)
-
-axs[0].scatter(lparams["A"], lparams["B"], fc="None", ec="k", linewidth=1)
-axs[1].scatter(lparams["A"], lparams["c"], fc="None", ec="k", linewidth=1)
-axs[2].scatter(lparams["B"], lparams["c"], fc="None", ec="k", linewidth=1)
+labels = ["(a)", "(b)", "(c)"]
+axs[0].scatter(
+    lparams["A"],
+    lparams["B"],
+    c=lparams["Elv"],
+    cmap="copper",
+    alpha=0.75,
+    ec="k",
+    linewidth=1,
+)
+axs[1].scatter(
+    lparams["A"],
+    lparams["c"],
+    c=lparams["Elv"],
+    cmap="copper",
+    alpha=0.75,
+    ec="k",
+    linewidth=1,
+)
+axs[2].scatter(
+    lparams["B"],
+    lparams["c"],
+    c=lparams["Elv"],
+    cmap="copper",
+    alpha=0.75,
+    ec="k",
+    linewidth=1,
+)
 
 axes_labels = [
     ("$A \ [h]$", "$f_0 \ [h^{-1}]$"),
@@ -590,11 +629,11 @@ for i, ax in enumerate(axs):
     #     ax.set_xscale('log')
     #     ax.set_xlim((1e-3, 1e-1))
 
-plt.savefig("output/spectral_budget/parameter_correlations.pdf", dpi=96, format="pdf")
+plt.savefig("output/parameter_correlations.pdf", dpi=96, format="pdf")
 plt.show()
 # plt.close()
 # %%
-######### Elevation - Distance to coast plot ##########
+######### Fig 5: Elevation - Distance to coast plot ##########
 params = ["A", "B", "c"]
 labels = ["(a)", "(b)", "(c)"]
 cb_labels = ["$A \ [h]$", "$f_0 \ [h^{-1}]$", "$c$"]
@@ -660,12 +699,12 @@ for i, ax in enumerate(axs_bottom):
     cb = fig.colorbar(sc, ax=ax, orientation="horizontal")
     cb.set_label(label="Elevation [m]", weight=400)
 
-plt.savefig("output/spectral_budget/parameters_features.pdf", dpi=96, format="pdf")
+plt.savefig("output/parameters_features.pdf", dpi=96, format="pdf")
 plt.show()
 
 
 # %%
-###### Compute Source #######
+###### Fig 7: Compute Source #######
 def source_term(f, A, B, c, m):
     h = f / B
     return (
@@ -713,8 +752,8 @@ fig = plt.figure(figsize=(9, 9), constrained_layout=True)
 fig1, fig2, fig3 = fig.subfigures(3, 1)
 labels = [
     "(a) Elevation $\geq$ 250m",
-    "(b)  Elevation $lt$ 250m and Distance to Coast $\leq$ 30km",
-    "(c) Elevation $lt$ 250m and Distance to Coast $gt$ 30km",
+    "(b)  Elevation $<$ 250m and Distance to Coast $\leq$ 30km",
+    "(c) Elevation $<$ 250m and Distance to Coast $>$ 30km",
 ]
 dfs = [orographic, coast, mixed]
 
@@ -737,11 +776,12 @@ for i, fig in enumerate((fig1, fig2, fig3)):
         axs[col].set_xlim((1e-6, 1e2))
         axs[col].set_ylim((0, 3))
 
-plt.savefig("output/spectral_budget/source_term.pdf", dpi=96, format="pdf")
+plt.savefig("output/source_term.pdf", dpi=96, format="pdf")
 plt.show()
 
 
 # %%
+########## Fig 8: Shannon Entropy ################
 def shannon_entropy(A, B, c, f_min, f_max):
     # Return normalized shannon entropy
     def entropy_integrand(f):
@@ -790,6 +830,7 @@ z_grid = intercept + slope_B * B_grid + slope_c * c_grid
 
 
 # %%
+########## Fig 8a: Shannon Entropy ################
 fig = go.Figure()
 
 fig.add_trace(
@@ -887,13 +928,16 @@ fig.add_annotation(
     align="center",
 )
 fig.write_image(
-    "output/spectral_budget/shannon_entropy_regression.png",
+    "output/shannon_entropy_regression.png",
     width=1000,
     height=800,
     scale=10,
 )
 fig.show()
+
+
 # %%
+########## Fig 8b: Shannon Entropy ################
 veneto_map_inset.add_scatter(
     data_df=lparams,
     data_col="Shannon_Entropy",
@@ -905,18 +949,43 @@ veneto_map_inset.add_scatter(
     s=100,
     cmap="plasma",
     cb_label="Normalized Shannon Entropy",
-    save_filepath="output/spectral_budget/shannon_entropy.png",
+    save_filepath="output/shannon_entropy.png",
 )
 
 # %%
 ############## Seasonal Analysis ##############
+from scipy.stats import linregress
+
+
+def fit_scaling_slope(f, psd, freq_range):
+    """
+    Slope (and its std. error) of log10(E) vs log10(f), restricted to
+    frequencies within freq_range = (f_min, f_max).
+    """
+    mask = (f >= freq_range[0]) & (f <= freq_range[1])
+    if mask.sum() < 2:
+        return np.nan, np.nan
+    slope, intercept, r, p, se = linregress(np.log10(f[mask]), np.log10(psd[mask]))
+    return slope, se
+
+
+# frequency bounds in h^-1 -> period ranges of [1day-1hour] and [1hour-1min]
+freq_ranges = {
+    "1day-1hour": (1 / 24, 1),
+    "1hour-1min": (1, 60),
+}
+
 psi = pywt.Wavelet("haar")
 spectra = {}
 lparams = {}
 std_error = {}
 int_scale = {}
 
-stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
+# All stations (already includes the three example stations used for the spectra plot below)
+stations = stations_df["station_id"].values
+example_stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
+scaling_records = []
+
 for station in stations:
     df = pd.read_csv(
         PRCP_FOLDER + station + ".csv",
@@ -952,17 +1021,35 @@ for station in stations:
         result.update({season: (psd, f)})
         ints.update({season: integral_scale})
 
+        for range_name, rng in freq_ranges.items():
+            slope, se = fit_scaling_slope(f, psd, rng)
+            scaling_records.append(
+                {
+                    "station_id": station,
+                    "season": season,
+                    "freq_range": range_name,
+                    "slope": -slope,  # c is plotted
+                    "std_error": se,
+                }
+            )
+
     spectra.update({station: result})
     int_scale.update({station: ints})
 
+scaling_df = pd.DataFrame(scaling_records)
+scaling_df.to_csv("output/seasonal_scaling_slopes.csv", index=False)
+scaling_df = scaling_df.merge(
+    stations_df[["station_id", "Elv", "Lat", "Lon"]], on="station_id"
+)
 
 # %%
+############## Fig 6: Seasonal Analysis ##############
 labels = ["(a)", "(b)", "(c)"]
 fig, axs = plt.subplots(1, 3, figsize=(9, 3), tight_layout=True)
 psd1_A = [3e-2, 5e-2, 5e-2]
 
 for col, ax in enumerate(axs):
-    station = stations[col]
+    station = example_stations[col]
     ax.plot(*spectra[station]["summer"][::-1], "r-", zorder=4, marker="o")
     ax.plot(*spectra[station]["winter"][::-1], "b-", zorder=4, marker="s")
     k = np.logspace(-0.9, -0.1, 3)
@@ -1001,7 +1088,7 @@ for col, ax in enumerate(axs):
 
     # Context
     map_ax = ax.inset_axes([0.05, 0.05, 0.4, 0.4])
-    map_fpath = f"./output/maps/{station}_map.png"
+    map_fpath = f"./data/maps/{station}.png"
 
     img = mpimg.imread(map_fpath)
     map_ax.imshow(img)
@@ -1020,8 +1107,162 @@ for col, ax in enumerate(axs):
     )  # 1H region where artificial smoothing (viscosity) due to sensor sampling averaging takes effect (Paschalis paper)
 
     configure_axis(ax, axis_settings)
-    add_time_axis(ax, tau, wavenumber=False, loc="top")
-plt.savefig("output/spectral_budget/seasonal_analysis.pdf", dpi=600, format="pdf")
+    add_time_axis(ax, tau, wavenumber=False, loc="top", pad_frac=0.12)
+plt.savefig("output/seasonal_analysis.pdf", dpi=600, format="pdf")
 plt.show()
 
+# %%
+# Scaling-slope comparison across all stations
+############## Fig S1: Seasonal Analysis ##############
+freq_range_order = ["1day-1hour", "1hour-1min"]
+panel_labels = ["(a)", "(b)"]
+season_colors = {"summer": "#C65F5F", "winter": "#3B75AF"}
+positions = {"summer": 1, "winter": 2}
+
+rng = np.random.default_rng(0)  # reproducible jitter
+
+fig, axs = plt.subplots(1, 2, figsize=(6, 3), tight_layout=True)
+
+for ax, freq_range, label in zip(axs, freq_range_order, panel_labels):
+    sub = scaling_df[scaling_df["freq_range"] == freq_range]
+
+    for season, pos in positions.items():
+        values = sub.loc[sub["season"] == season, "slope"].values
+        print(f"{season} ({freq_range}) = {values.mean():.2f}")
+        parts = ax.violinplot(
+            values, positions=[pos], showmeans=True, showextrema=False
+        )
+        for body in parts["bodies"]:
+            body.set_facecolor(season_colors[season])
+            body.set_edgecolor("k")
+            body.set_alpha(0.6)
+
+        jitter = rng.uniform(-0.05, 0.05, size=len(values))
+        ax.scatter(
+            np.full(len(values), pos) + jitter,
+            values,
+            color="k",
+            alpha=0.6,
+            s=15,
+            zorder=3,
+        )
+
+    ax.set_xticks([1, 2])
+    ax.set_xticklabels(["JJA", "DJF"])
+    ax.set_title(label)
+    ax.set_ylabel("$c$" if ax is axs[0] else "")
+
+plt.savefig("output/seasonal_slope_comparison.pdf", dpi=600, format="pdf")
+plt.show()
+
+# %%
+############## Fig S2: Seasonal Analysis ##############
+# seasons = ["summer", "winter"]
+# freq_ranges = ["1day-1hour", "1hour-1min"]
+
+# slope_dfs = {}
+# for season in seasons:
+#     for freq_range in freq_ranges:
+#         key = f"{season}_{freq_range}"
+#         slope_dfs[key] = scaling_df[
+#             (scaling_df["season"] == season) & (scaling_df["freq_range"] == freq_range)
+#         ].copy()
+
+# freq_range_labels = {
+#     "1day-1hour": "[1 day - 1h]",
+#     "1hour-1min": "[1h - 5min]",
+# }
+
+# for key, df in slope_dfs.items():
+#     season, freq_range = df["season"].iloc[0], df["freq_range"].iloc[0]
+#     cb_label = f"c ({season.capitalize()} - {freq_range_labels[freq_range]})"
+#     veneto_map_inset.add_scatter(
+#         data_df=df,
+#         data_col="slope",
+#         crs=4326,
+#         temporary=True,
+#         to_show=["raster", "base"],
+#         x_col="Lon",
+#         y_col="Lat",
+#         s=100,
+#         cmap="plasma",
+#         cb_label=cb_label,
+#         save_filepath=f"output/slope_map_{key}.png",
+#     )
+
+
+# %%
+def plot_slope_map(scaling_df, veneto_map, veneto_map_inset, save_path=None):
+    """
+    Args:
+        scaling_df: DataFrame with columns [station_id, season, freq_range, slope, std_error, Lon, Lat, Elv]
+    """
+    seasons = ["summer", "winter"]
+    freq_ranges = ["1day-1hour", "1hour-1min"]
+    freq_range_labels = {
+        "1day-1hour": "[1 day - 1h]",
+        "1hour-1min": "[1h - 5min]",
+    }
+    clabel = {"summer": "JJA", "winter": "DJF"}
+    labels = [["(a)", "(b)"], ["(c)", "(d)"]]  # row = freq_range, col = season
+
+    # Split into 4 subsets, one per (season, freq_range) combo
+    slope_dfs = {}
+    for season in seasons:
+        for freq_range in freq_ranges:
+            key = f"{season}_{freq_range}"
+            slope_dfs[key] = scaling_df[
+                (scaling_df["season"] == season)
+                & (scaling_df["freq_range"] == freq_range)
+            ].copy()
+
+    fig = plt.figure(figsize=(6, 7))
+    subfigs = fig.subfigures(2, 1, hspace=0.01)
+
+    first_plot = True
+    for row, freq_range in enumerate(freq_ranges):
+        subfig = subfigs[row]
+        subfig.suptitle(freq_range_labels[freq_range], fontsize=13)
+        axs = subfig.subplots(1, 2, gridspec_kw={"wspace": 0.01})
+
+        for col, season in enumerate(seasons):
+            key = f"{season}_{freq_range}"
+            df_here = slope_dfs[key]
+            print(f"Generating plot for {season} - {freq_range} ...")
+
+            cb_label = f"c ({clabel[season]})"
+            map_fpath = f"output/slope_map_{key}.png"
+
+            current_map = veneto_map_inset if first_plot else veneto_map
+            first_plot = False
+
+            current_map.add_scatter(
+                data_df=df_here,
+                data_col="slope",
+                crs=4326,
+                temporary=True,
+                to_show=["raster", "base"],
+                x_col="Lon",
+                y_col="Lat",
+                s=100,
+                cmap="plasma",
+                cb_label=cb_label,
+                save_filepath=map_fpath,
+            )
+
+            ax = axs[col]
+            img = mpimg.imread(map_fpath)
+            ax.imshow(img)
+            ax.axis("off")
+            ax.set_title(labels[row][col], fontsize=12)
+            os.remove(map_fpath)
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, format="pdf")
+        plt.close()
+
+
+plot_slope_map(
+    scaling_df, veneto_map, veneto_map_inset, save_path="output/c_map_seasonal.pdf"
+)
 # %%
