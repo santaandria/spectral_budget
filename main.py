@@ -8,6 +8,7 @@ from scipy.special import gamma
 from scipy.optimize import minimize, curve_fit, least_squares
 from scipy.integrate import quad, simpson, trapezoid
 from scipy.stats import kurtosis, skew, bootstrap
+from src.helpers.integral_scale_analysis import compute_spectra
 
 
 from statsmodels.tsa.stattools import acf
@@ -25,7 +26,7 @@ import plotly.graph_objects as go
 import os
 import json
 
-PRCP_FOLDER = "/mnt/d/climate_data/ARPAV_5min/filled_sampling/"
+PRCP_FOLDER = "/home/santa/Shared/data/filled_sampling/"
 RECOMPUTE_LPARAMS = False
 
 
@@ -174,281 +175,6 @@ def plot_lorentzian_map(
         plt.close()
 
 
-def fit_psd_power_law(psd, K, integral_scale, angular=True):
-    """
-    Fit a power law to the power spectral density using piecewise regression in log-log space
-    Args:
-        psd: Power spectral density values
-        K: Wavenumber values
-        integral_scale: Integral scale parameter
-
-    Returns:
-        tuple: (power law exponent, confidence interval, breakpoint)
-    """
-    x = np.log10(K)
-    y = np.log10(psd)
-    C = 2 * np.pi if angular else 1
-    pw_fit = piecewise_regression.Fit(
-        x, y, n_breakpoints=1, start_values=[np.log10(C / integral_scale)]
-    )
-    results = pw_fit.get_results()["estimates"]
-
-    c = results["alpha2"]["estimate"]
-    c_ci = results["alpha2"]["confidence_interval"]
-    breakpt = results["breakpoint1"]["estimate"]
-
-    return c, c_ci, breakpt
-
-
-def lorentzian_spectra(
-    wavelets, integral_scale, fourier=None, return_err=False, angular=True
-):
-    """
-    Analyze both wavelet and Fourier spectra using Lorentzian fitting.
-
-    Parameters
-    wavelets : Tuple[np.ndarray, np.ndarray]
-        Tuple of (power spectral density, wavenumbers) for wavelet analysis
-    integral_scale : float
-        Integral scale parameter for initialization
-    fourier : Optional[Tuple[np.ndarray, np.ndarray]]
-        Optional tuple of (power spectral density, wavenumbers) for Fourier analysis
-    return_err : bool, optional
-        If True, returns error estimates for fitted parameters
-
-    Returns
-        Dictionary containing results for wavelet analysis and optionally Fourier analysis
-    """
-
-    psd_w, K_w = map(np.asarray, wavelets)
-    integral_limit = (min(K_w), max(K_w))
-
-    psd_w, K_w = psd_w[:-1], K_w[:-1]  # Ignore largest scale in the lorentzian fit
-
-    C = 2 * np.pi if angular else 1
-
-    # Initial parameter estimation
-    c, _, breakpt = fit_psd_power_law(psd_w, K_w, integral_scale, angular=angular)
-    params_init = [integral_scale / np.pi / C, 10**breakpt, -c]
-
-    # Fit wavelet spectrum
-    res_w = fit_lorentzian(
-        psd_w,
-        K_w,
-        params_init,
-        integral_limit=integral_limit,
-        return_err=return_err,
-        bootstrap_samples=1000,
-    )
-
-    if return_err:
-        res_w[0]["breakpoint"] = 10**breakpt
-    else:
-        res_w["breakpoint"] = 10**breakpt
-
-    if fourier is None:
-        return res_w
-
-    # Process Fourier spectrum if provided
-    psd_F, K_F = map(np.asarray, fourier)
-
-    # Filter Fourier data to match wavelet range
-    mask = K_F < max(K_w)
-    psd_F, K_F = psd_F[mask], K_F[mask]
-    K_F[K_F == 0] = 1e-15  # Avoid log(0)
-
-    # Use wavelet results as initial parameters for Fourier fit
-    wavelet_params = res_w[0] if return_err else res_w
-    params_init = [wavelet_params["A"], wavelet_params["B"], wavelet_params["c"]]
-
-    # Fit Fourier spectrum
-    res_F = fit_lorentzian(
-        psd_F, K_F, params_init, return_err=return_err, bootstrap_samples=1000
-    )
-
-    return {"wavelet": res_w, "fourier": res_F}
-
-
-def fit_lorentzian(
-    psd, K, params_init, integral_limit, return_err=True, bootstrap_samples=1000
-):
-    """
-    Fit a Lorentzian function to the power spectrum density using non-linear least squares.
-
-    Parameters
-    ----------
-    psd : np.ndarray
-        Power spectral density values
-    K : np.ndarray
-        Wavenumber values
-    params_init : List[float]
-        Initial parameter guesses [A, B, c] for the Lorentzian function
-    return_err : bool, optional
-        If True, returns standard error estimates via bootstrap resampling
-    bootstrap_samples : int, optional
-        Number of bootstrap resamples for error estimation
-
-    Returns
-    -------
-    Union[Dict[str, float], Tuple[Dict[str, float], np.ndarray]]
-        If return_err is False:
-            Dictionary containing fitted parameters {'A', 'B', 'c'}
-        If return_err is True:
-            Tuple of (parameters dictionary, standard errors array)
-
-    Notes
-    -----
-    The Lorentzian function is fitted in log-space for numerical stability.
-    Error estimates are computed using bootstrap resampling when return_err=True.
-    """
-    psd, K = np.asarray(psd), np.asarray(K)
-
-    def log_lorentzian(params: tuple, u):
-        A, B, c = params
-        eps = 1e-15
-        # logaddexp(x1,x2) = log(exp(x1) + exp(x2)) is numerically more stable as it handles large values of x better.
-        return np.log(max(A, eps)) - np.logaddexp(0, c * (u - np.log(max(B, eps))))
-
-    popt, pcov = curve_fit(
-        lambda u, A, B, c: log_lorentzian((A, B, c), u),
-        np.log(K),
-        np.log(psd),
-        p0=params_init,
-    )
-    # perr = np.sqrt(np.diag(pcov))
-
-    ###### Add AUC = 1 constraint to refine B ######
-    def residuals(p, K, psd):
-        integral = quad(
-            lambda f: lorentzian(f, popt[0], p, popt[2]), *integral_limit, epsrel=1e-9
-        )[0]
-        penalization = abs(1 - integral) * 10000
-        return (
-            np.log(psd)
-            - log_lorentzian((popt[0], p, popt[2]), np.log(K))
-            - penalization
-        )
-
-    out = least_squares(residuals, popt[1], args=(K, psd))
-
-    params = {
-        "A": popt[0],
-        "B": out.x[0],
-        "c": popt[2],
-    }
-
-    if not return_err:
-        return params
-
-    # Perform bootstrap resampling for error estimation
-    boot_params = []
-    rng = np.random.default_rng()
-
-    for _ in range(bootstrap_samples):
-        indices = rng.integers(0, len(psd), size=len(psd))
-        psd_resampled = psd[indices]
-        K_resampled = K[indices]
-
-        try:
-            popt_resampled, _ = curve_fit(
-                lambda u, A, B, c: log_lorentzian((A, B, c), u),
-                np.log(K_resampled),
-                np.log(psd_resampled),
-                p0=(params["A"], params["B"], params["c"]),
-            )
-            # popt_resampled_refined = least_squares(residuals,
-            #             params['B'],
-            #             args=(K_w, psd_w))
-
-            # boot_params.append((popt_resampled[0], popt_resampled_refined.x[0], popt_resampled[2]))
-            boot_params.append(popt_resampled)
-        except RuntimeError:
-            continue
-
-    boot_params = np.array(boot_params)
-    boot_se = np.std(boot_params, axis=0)
-
-    return params, boot_se
-
-
-def compute_spectra(stations, delta_t, fit_lorentzian=False, return_wT=False):
-    psi = pywt.Wavelet("haar")
-    spectra = {}
-    lparams = {}
-    std_error = {}
-    int_scale = {}
-    wavelet_coeff = {}
-
-    for station in stations:
-        df = pd.read_csv(
-            PRCP_FOLDER + station + ".csv",
-            parse_dates=["datetime"],
-            index_col="datetime",
-        )
-        data = df["PRCP"].values
-
-        # Normalize
-        x = data - np.nanmean(data)
-        x = x / np.nanstd(x)
-
-        # ACF Analysis
-        _, _, integral_scale, _ = acf_analysis(x, delta_t)
-
-        # Wavelet Transform
-        wT, tau = wavelet_transform(x, psi, delta_t, mode="per")
-        psd_w, K_w = wavelet_psd(wT, tau, delta_t, angular=False)
-        psd_F, K_F = fourier_psd(
-            x, delta_t, window="hann", nperseg=8 * 8192, angular=False
-        )
-        spectra.update({station: {"wavelet": (psd_w, K_w), "fourier": (psd_F, K_F)}})
-        int_scale.update({station: integral_scale})
-        if return_wT:
-            wavelet_coeff.update({station: {"wT": wT, "scales": tau}})
-
-        if fit_lorentzian:
-            print(f"------------ Processing {station} ------------")
-            try:
-                p, perr = lorentzian_spectra(
-                    (psd_w, K_w),
-                    integral_scale=integral_scale,
-                    return_err=True,
-                    angular=False,
-                )
-                lparams.update({station: p})
-                std_error.update({station: perr})
-
-                ## Check
-                area = quad(
-                    lambda f: lorentzian(f, p["A"], p["B"], p["c"]),
-                    min(K_w),
-                    max(K_w),
-                    epsrel=1e-9,
-                )[0]
-                print(
-                    f"{station} & A = {p['A']:.2f} +/- {perr[0]:.2f} & f0 = {p['B']:.3f}  +/- {perr[1]:.3f} & c = {p['c']:.2f} +/- {perr[2]:.2f} & area = {area:.4f} \\\\"
-                )
-
-            except:
-                print("!!!!!!!! OPTIMIZATION FAILED !!!!!!!!")
-                continue
-
-    if fit_lorentzian:
-        lparams_df = pd.DataFrame.from_dict(lparams, orient="index").rename_axis(
-            "station_id"
-        )
-        std_error_df = (
-            pd.DataFrame.from_dict(std_error, orient="index")
-            .rename_axis("station_id")
-            .rename(columns={0: "A", 1: "B", 2: "c"})
-        )
-        lparams_df.to_csv("data/lparams.csv")
-        std_error_df.to_csv("output/lorentzian_std_error.csv")
-
-    if return_wT:
-        return spectra, wavelet_coeff, int_scale
-    return spectra, int_scale
-
-
 ###################################################################################
 ###################################################################################
 # %%
@@ -457,28 +183,8 @@ stations_df = pd.read_csv("data/gt_30y_lt_1perc_missing.csv")
 stations = stations_df["station_id"].values
 delta_t = 5 / 60
 
-if RECOMPUTE_LPARAMS:
-    spectra, int_scale = compute_spectra(
-        stations, delta_t=delta_t, fit_lorentzian=True, return_wT=False
-    )
-    lparams = pd.read_csv("data/lparams.csv")
-    lparams = lparams.merge(
-        stations_df[["station_id", "Elv", "Lat", "Lon", "distance_to_coast"]],
-        on="station_id",
-    )
-    lparams["int_scale"] = lparams["station_id"].map(int_scale)
-    min_K = {stn: min(v["wavelet"][1]) for stn, v in spectra.items()}
-    max_K = {stn: max(v["wavelet"][1]) for stn, v in spectra.items()}
-
-    lparams = lparams.assign(
-        min_K=lparams["station_id"].map(min_K),
-        max_K=lparams["station_id"].map(max_K),
-    )
-
-    lparams = lparams.set_index("station_id")
-    lparams.to_csv("data/lparams.csv")
-else:
-    lparams = pd.read_csv("data/lparams.csv").set_index("station_id")
+lparams = pd.read_csv("data/lparams.csv").set_index("station_id")
+lparams["int_scale"] = lparams["gamma_spectrum"]
 
 std_err = pd.read_csv("output/lorentzian_std_error.csv", index_col="station_id")
 veneto_map_inset = create_veneto_map(cb=1.5, show=False, add_inset=True)
@@ -525,8 +231,8 @@ def add_extra_wT(ax, station):
 
 
 stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
-spectra, wavelet_coeff, int_scale = compute_spectra(
-    stations, delta_t=delta_t, fit_lorentzian=False, return_wT=True
+spectra, wavelet_coeff = compute_spectra(
+    stations, lparams["gamma_acf"].to_dict(), delta_t=delta_t, fit_lorentzian=False, return_wT=True
 )
 
 labels = ["(a)", "(b)", "(c)"]
@@ -561,7 +267,7 @@ for col, ax in enumerate(axs):
     map_ax.imshow(img)
     map_ax.axis("off")
 
-    ax.axhline(y=int_scale[station] / np.pi, linestyle="--", c="k", linewidth=0.5)
+    ax.axhline(y=lparams.loc[station, "gamma_acf"]*4, linestyle="--", c="k", linewidth=0.5)
     ax.add_artist(
         plt.Rectangle(
             (1, ax.get_ylim()[0]),

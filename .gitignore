@@ -2,4 +2,4 @@ data/turbulence/
 data/shp/
 data/maps/
 output/
-src/__pycache__
+__pycache__/
