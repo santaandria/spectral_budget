@@ -8,6 +8,26 @@ from scipy.signal import welch
 import piecewise_regression
 
 
+def standardize(data):
+    """
+    Centre a series on its mean and scale it to unit standard deviation,
+    ignoring NaNs.
+
+    Both statistics are nan-aware so that gappy or seasonally masked series
+    are handled: the NaNs are preserved in the output and propagate to any
+    subsequent transform. Note the standard deviation is taken on the already
+    centred array, matching the original in-line form exactly.
+
+    Parameters:
+        data: 1-D array, may contain NaNs
+
+    Return:
+        Standardised array of the same shape
+    """
+    x = data - np.nanmean(data)
+    return x / np.nanstd(x)
+
+
 def acf_analysis(x, delta_t):
     """
     Compute the ACF and the integral scale of a time series and optionally plot them

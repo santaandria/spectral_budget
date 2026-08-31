@@ -1,39 +1,66 @@
 # %%
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.ticker import FixedLocator
-from src.helpers import *
-import pywt
-from scipy.special import gamma
-from scipy.optimize import minimize, curve_fit, least_squares
-from scipy.integrate import quad, simpson, trapezoid
-from scipy.stats import kurtosis, skew, bootstrap
-from src.helpers.integral_scale_analysis import compute_spectra
+"""
+Spectral budget of precipitation time series - manuscript figure generation.
 
+Reads the per-station Lorentzian parameters produced by the integral-scale
+analysis and generates every figure and table for the manuscript, writing
+them to ``output/``.
 
-from statsmodels.tsa.stattools import acf
-import statsmodels.api as sm
-from scipy.integrate import simpson, romb, quad
-from scipy.signal import welch
-from collections import Counter
-from src.helpers.maps_helper import *
-import warnings
+PREREQUISITE
+------------
+``integral_scale_analysis.py`` must be run **before** this script. It produces
+the inputs consumed here:
 
-import matplotlib.gridspec as gridspec
-import matplotlib.image as mpimg
-import plotly.graph_objects as go
+    data/lparams.csv                  Lorentzian parameters per station
+    output/lorentzian_std_error.csv   standard errors of those parameters
+
+Running ``main.py`` against a stale or missing ``lparams.csv`` will either fail
+on load or silently reproduce figures from outdated fits.
+
+OTHER INPUTS
+------------
+    data/gt_30y_lt_1perc_missing.csv  station metadata (id, Lat, Lon, Elv)
+    PRCP_FOLDER/<station_id>.csv      5-minute precipitation series
+
+The script runs top to bottom as a sequence of ``# %%`` cells. Execution order
+is significant: ``lparams``, ``spectra`` and ``stations`` are deliberately
+rebound partway through (the seasonal analysis reuses those names for its own
+per-station dictionaries), so sections must not be reordered.
+"""
 
 import os
-import json
+
+import numpy as np
+import pandas as pd
+import pywt
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import matplotlib.image as mpimg
+from scipy.integrate import quad
+from scipy.stats import linregress
+
+from src.helpers import *
+from src.helpers.maps_helper import *
+from src.helpers.integral_scale_analysis import compute_spectra
 
 PRCP_FOLDER = "/home/santa/Shared/data/filled_sampling/"
 RECOMPUTE_LPARAMS = False
 
 
+def load_station_series(station):
+    """Load one station's 5-minute precipitation series, indexed by datetime."""
+    return pd.read_csv(
+        PRCP_FOLDER + station + ".csv",
+        parse_dates=["datetime"],
+        index_col="datetime",
+    )
+
+
 # %%
-###################################################################################
-###################################################################################
+# ==========================================================================
+# Plot helpers used by the figure sections below
+# ==========================================================================
 def conceptual_plot(savepath=None):
     def low_freq_correction_factor(A, integral_scale, alpha, f):
         E0 = integral_scale / np.pi
@@ -176,10 +203,13 @@ def plot_lorentzian_map(
         plt.close()
 
 
-###################################################################################
-###################################################################################
+# ==========================================================================
+# End plot helpers
+# ==========================================================================
 # %%
-#### Loading data #####
+# --------------------------------------------------------------------------
+# Load data: station metadata, Lorentzian parameters, base maps
+# --------------------------------------------------------------------------
 stations_df = pd.read_csv("data/gt_30y_lt_1perc_missing.csv")
 stations = stations_df["station_id"].values
 delta_t = 5 / 60
@@ -191,7 +221,9 @@ std_err = pd.read_csv("output/lorentzian_std_error.csv", index_col="station_id")
 veneto_map_inset = create_veneto_map(cb=1.5, show=False, add_inset=True)
 veneto_map = create_veneto_map(cb=1.5, show=False, add_inset=False)
 # %%
-##### Fig 3: Plotting Parameter Map #####
+# --------------------------------------------------------------------------
+# Fig 3: Lorentzian parameter maps
+# --------------------------------------------------------------------------
 print("------------ Plotting Map ------------")
 plot_lorentzian_map(
     lparams,
@@ -202,23 +234,22 @@ plot_lorentzian_map(
 )
 plt.close()
 # %%
-##### Fig 1: Conceptual Plot ######
+# --------------------------------------------------------------------------
+# Fig 1: Conceptual spectrum
+# --------------------------------------------------------------------------
 conceptual_plot("output/conceptual_plot.pdf")
 
 
 # %%
-###### Fig 2: Spectra Plot #########
+# --------------------------------------------------------------------------
+# Fig 2: Energy spectra for three example stations
+# --------------------------------------------------------------------------
 def add_extra_wT(ax, station):
-    df = pd.read_csv(
-        PRCP_FOLDER + station + ".csv",
-        parse_dates=["datetime"],
-        index_col="datetime",
-    )
+    df = load_station_series(station)
     data = df["PRCP"].values
 
     # Normalize
-    x = data - np.nanmean(data)
-    x = x / np.nanstd(x)
+    x = standardize(data)
 
     colors = ["g", "y", "b"]
     markers = ["s", "v", "x"]
@@ -288,7 +319,9 @@ plt.savefig("output/energy_spectra.pdf", dpi=600, format="pdf")
 plt.show()
 # plt.close()
 # %%
-############ Fig 4: Parameter Correlations ###################
+# --------------------------------------------------------------------------
+# Fig 4: Parameter correlations
+# --------------------------------------------------------------------------
 fig, axs = plt.subplots(1, 3, figsize=(9, 3), tight_layout=True)
 labels = ["(a)", "(b)", "(c)"]
 axs[0].scatter(
@@ -340,7 +373,9 @@ plt.savefig("output/parameter_correlations.pdf", dpi=96, format="pdf")
 plt.show()
 # plt.close()
 # %%
-######### Fig 5: Elevation - Distance to coast plot ##########
+# --------------------------------------------------------------------------
+# Fig 5: Parameters vs. elevation and distance to coast
+# --------------------------------------------------------------------------
 params = ["A", "B", "c"]
 labels = ["(a)", "(b)", "(c)"]
 cb_labels = ["$A \ [h]$", "$f_0 \ [h^{-1}]$", "$c$"]
@@ -411,7 +446,9 @@ plt.show()
 
 
 # %%
-###### Fig 7: Compute Source #######
+# --------------------------------------------------------------------------
+# Fig 7: Source term
+# --------------------------------------------------------------------------
 def source_term(f, A, B, c, m):
     h = f / B
     return (
@@ -488,7 +525,9 @@ plt.show()
 
 
 # %%
-########## Fig 8: Shannon Entropy ################
+# --------------------------------------------------------------------------
+# Fig 8: Shannon entropy - compute and regress
+# --------------------------------------------------------------------------
 def shannon_entropy(A, B, c, f_min, f_max):
     # Return normalized shannon entropy
     def entropy_integrand(f):
@@ -536,7 +575,9 @@ B_grid, c_grid = np.meshgrid(B_range, c_range)
 z_grid = intercept + slope_B * B_grid + slope_c * c_grid
 
 # %%
-########## Fig 8a: Shannon Entropy ################
+# --------------------------------------------------------------------------
+# Fig 8a: Shannon entropy regression surface
+# --------------------------------------------------------------------------
 fig = plt.figure(figsize=(5, 5))
 ax = fig.add_subplot(111, projection="3d")
  
@@ -636,7 +677,9 @@ fig.savefig(
 
 # %%
 veneto_map_inset = create_veneto_map(cb=1.5, add_inset=True)
-########## Fig 8b: Shannon Entropy ################
+# --------------------------------------------------------------------------
+# Fig 8b: Shannon entropy map
+# --------------------------------------------------------------------------
 def plot_shannon_entropy_map(veneto_map_inset, lparams):
     print("Fig 8b")
     veneto_map_inset.add_scatter(
@@ -657,9 +700,10 @@ def plot_shannon_entropy_map(veneto_map_inset, lparams):
 plot_shannon_entropy_map(veneto_map_inset, lparams)
 
 # %%
-############## Seasonal Analysis ##############
+# --------------------------------------------------------------------------
+# Seasonal analysis: per-station summer/winter scaling slopes
+# --------------------------------------------------------------------------
 print("Seasonal Analysis")
-from scipy.stats import linregress
 
 
 def fit_scaling_slope(f, psd, freq_range):
@@ -692,11 +736,7 @@ example_stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
 scaling_records = []
 
 for station in stations:
-    df = pd.read_csv(
-        PRCP_FOLDER + station + ".csv",
-        parse_dates=["datetime"],
-        index_col="datetime",
-    )
+    df = load_station_series(station)
 
     summer = df.copy()
     summer.loc[~summer.index.month.isin([6, 7, 8]), "PRCP"] = np.nan  # JJA
@@ -711,8 +751,7 @@ for station in stations:
         data = data["PRCP"].values
 
         # Normalize
-        x = data - np.nanmean(data)
-        x = x / np.nanstd(x)
+        x = standardize(data)
 
         # ACF Analysis
         _, _, integral_scale, _ = acf_analysis(x, delta_t)
@@ -750,7 +789,9 @@ scaling_df = scaling_df.merge(
 )
 
 # %%
-############## Fig 6: Seasonal Analysis ##############
+# --------------------------------------------------------------------------
+# Fig 6: Seasonal spectra
+# --------------------------------------------------------------------------
 print("Fig 6")
 labels = ["(a)", "(b)", "(c)"]
 fig, axs = plt.subplots(1, 3, figsize=(9, 3), tight_layout=True)
@@ -821,7 +862,9 @@ plt.show()
 
 # %%
 # Scaling-slope comparison across all stations
-############## Fig S1: Seasonal Analysis ##############
+# --------------------------------------------------------------------------
+# Fig S1: Seasonal slope comparison
+# --------------------------------------------------------------------------
 freq_range_order = ["1day-1hour", "1hour-1min"]
 panel_labels = ["(a)", "(b)"]
 season_colors = {"summer": "#C65F5F", "winter": "#3B75AF"}
@@ -864,7 +907,9 @@ plt.savefig("output/seasonal_slope_comparison.pdf", dpi=600, format="pdf")
 plt.show()
 
 # %%
-############## Fig S2: Seasonal Analysis ##############
+# --------------------------------------------------------------------------
+# Fig S2: Seasonal slope maps
+# --------------------------------------------------------------------------
 
 # %%
 def plot_slope_map(scaling_df, veneto_map, veneto_map_inset, save_path=None):
