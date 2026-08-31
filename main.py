@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FixedLocator
 from src.helpers import *
 import pywt
 from scipy.special import gamma
@@ -232,7 +233,7 @@ def add_extra_wT(ax, station):
 
 stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
 spectra, wavelet_coeff = compute_spectra(
-    stations, lparams["gamma_acf"].to_dict(), delta_t=delta_t, fit_lorentzian=False, return_wT=True
+    stations, lparams["gamma_acf"].to_dict(), PRCP_FOLDER, delta_t=delta_t, fit_lorentzian_flag=False, return_wT=True
 )
 
 labels = ["(a)", "(b)", "(c)"]
@@ -529,137 +530,135 @@ print(
 B_min, B_max = lparams["B"].min(), lparams["B"].max()
 c_min, c_max = lparams["c"].min(), lparams["c"].max()
 
-B_range = np.linspace(B_min, B_max, 10)
-c_range = np.linspace(c_min, c_max, 10)
+B_range = np.linspace(B_min, B_max, 1000)
+c_range = np.linspace(c_min, c_max, 1000)
 B_grid, c_grid = np.meshgrid(B_range, c_range)
 z_grid = intercept + slope_B * B_grid + slope_c * c_grid
 
-
 # %%
 ########## Fig 8a: Shannon Entropy ################
-fig = go.Figure()
+fig = plt.figure(figsize=(5, 5))
+ax = fig.add_subplot(111, projection="3d")
+ 
+B_range = np.linspace(B_min, B_max, 200)
+c_range = np.linspace(c_min, c_max, 200)
+B_grid, c_grid = np.meshgrid(B_range, c_range)
+z_grid = intercept + slope_B * B_grid + slope_c * c_grid
 
-fig.add_trace(
-    go.Surface(
-        x=B_grid,
-        y=c_grid,
-        z=z_grid,
-        colorscale="Reds",
-        opacity=0.6,
-        name="Regression Plane",
-        showscale=False,
-        contours={
-            "x": {"show": True, "width": 2, "color": "darkred"},
-            "y": {"show": True, "width": 2, "color": "darkred"},
-            "z": {"show": False},
-        },
-        hidesurface=False,
-    )
+n_lines = 5
+rstride = max(1, z_grid.shape[0] // n_lines)
+cstride = max(1, z_grid.shape[1] // n_lines)
+
+ax.computed_zorder = False        
+
+ax.plot_surface(
+    B_grid, c_grid, z_grid,
+    cmap="Reds",
+    alpha=0.6,
+    linewidth=0,
+    antialiased=True,
+    shade=False,
+    rcount=200,
+    ccount=200,
+    zorder=1,              
 )
 
-fig.add_trace(
-    go.Scatter3d(
-        x=lparams["B"],
-        y=lparams["c"],
-        z=lparams["Shannon_Entropy"],
-        mode="markers",
-        marker=dict(
-            size=12,
-            color=lparams["Shannon_Entropy"],
-            colorscale="plasma",
-            line=dict(color="black", width=5),
-            opacity=0.9,
-        ),
-        name="Data Points",
-    )
+ax.plot_wireframe(
+    B_grid, c_grid, z_grid,
+    rstride=rstride,
+    cstride=cstride,
+    color=mcolors.to_rgba("darkred", 0.1),   
+    linewidth=0.5,
+    zorder=2,
 )
 
-camera = dict(
-    up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=-2, y=1.5, z=0.5)
+ax.scatter(
+    lparams["B"], lparams["c"], lparams["Shannon_Entropy"],
+    c=lparams["Shannon_Entropy"],
+    cmap="plasma",
+    s=120,
+    edgecolors="black",
+    linewidths=0.5,
+    alpha=0.9,
+    depthshade=False,
+    zorder=3,                       
 )
 
-fig.update_layout(
-    scene_camera=camera,
-    font=dict(size=15, family="Arial"),
-    scene=dict(
-        xaxis=dict(
-            tickvals=[0.02, 0.04, 0.06],
-            range=[0, 0.08],
-            title=dict(
-                text="f<sub>0</sub>",
-                font=dict(size=24, weight=500),
-            ),
-            backgroundcolor="white",
-            gridcolor="lightgrey",
-            showbackground=True,
-            zerolinecolor="white",
-        ),
-        yaxis=dict(
-            title=dict(
-                text="c",
-                font=dict(size=24, weight=500),
-            ),
-            backgroundcolor="white",
-            gridcolor="lightgrey",
-            showbackground=True,
-            zerolinecolor="white",
-        ),
-        zaxis=dict(
-            title=dict(
-                text=r"H(f)",
-                font=dict(size=24, weight=500),
-            ),
-            backgroundcolor="white",
-            gridcolor="lightgrey",
-            showbackground=True,
-            zerolinecolor="white",
-        ),
-    ),
-    width=1000,
-    height=800,
-    margin=dict(r=5, l=5, b=5, t=5),
-)
+ax.set_xlim(0, 0.08)
+ax.set_xticks([0.02, 0.04, 0.06])
+ax.set_yticks([0.7, 0.8, 0.9])
+ax.tick_params(axis="x", labelsize=12)
+ax.tick_params(axis="y", labelsize=12)
+ax.tick_params(axis="z", labelsize=12)  
+ax.xaxis.minorticks_off()
+ax.yaxis.minorticks_off()
 
-fig.add_annotation(
-    x=0.1,
-    y=0.9,
-    xref="paper",
-    yref="paper",
-    text=f"H(f) = {slope_B:.3f} × f<sub>0</sub> - {np.abs(slope_c):.3f} × c + {intercept:.3f}<br>R² = {model.rsquared:.2f}",
-    showarrow=False,
-    font=dict(size=18),
-    bgcolor="white",
-    bordercolor="black",
-    borderwidth=1,
-    align="center",
+ax.set_xlabel(r"$f_0$", fontsize=18, fontweight="medium", labelpad=18)
+ax.set_ylabel(r"$c$", fontsize=18, fontweight="medium", labelpad=18)
+ax.set_zlabel(r"$H(f)$", fontsize=18, fontweight="medium", labelpad=18)
+ 
+for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+    axis.set_pane_color((1.0, 1.0, 1.0, 1.0))     
+    axis.pane.set_edgecolor("white")
+    axis._axinfo["grid"].update(color="lightgrey", linewidth=0.3)
+    axis.line.set_color("white")
+ 
+ax.grid(True)
+ax.set_box_aspect((1, 1, 1))
+
+
+eye = np.array([-2.0, 1.5, 0.5])
+r = np.linalg.norm(eye)
+elev = np.degrees(np.arcsin(eye[2] / r))          
+azim = np.degrees(np.arctan2(eye[1], eye[0]))     
+ax.view_init(elev=elev, azim=azim)
+
+ax.text2D(
+    0.5,
+    0.90,
+    f"$H(f) = {slope_B:.3f} \\times f_0 - {np.abs(slope_c):.3f} \\times c "
+    f"+ {intercept:.3f}$\n$R^2 = {model.rsquared:.2f}$",
+    transform=ax.transAxes,
+    fontsize=14,
+    ha="center",
+    va="center",
+    bbox=dict(facecolor="white", edgecolor="black", linewidth=1, boxstyle="square,pad=0.5"),
 )
-fig.write_image(
+ 
+fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
+fig.savefig(
     "output/shannon_entropy_regression.png",
-    width=1000,
-    height=800,
-    scale=10,
+    dpi=300,         
+    bbox_inches="tight",
+    facecolor="white",
 )
-fig.show()
 
 
 # %%
+veneto_map_inset = create_veneto_map(cb=1.5, add_inset=True)
 ########## Fig 8b: Shannon Entropy ################
-veneto_map_inset.add_scatter(
-    data_df=lparams,
-    data_col="Shannon_Entropy",
-    crs=4326,
-    temporary=True,
-    to_show=["raster", "base"],
-    x_col="Lon",
-    y_col="Lat",
-    s=100,
-    cmap="plasma",
-    cb_label="Normalized Shannon Entropy",
-    save_filepath="output/shannon_entropy.png",
-)
+def plot_shannon_entropy_map(veneto_map_inset, lparams):
+    print("Fig 8b")
+    veneto_map_inset.add_scatter(
+        data_df=lparams,
+        data_col="Shannon_Entropy",
+        crs=4326,
+        temporary=True,
+        to_show=["raster", "base"],
+        x_col="Lon",
+        y_col="Lat",
+        s=100,
+        cmap="plasma",
+        cb_label="Normalized Shannon Entropy",
+        save_filepath="output/shannon_entropy.png",
+    )
+
+
+plot_shannon_entropy_map(veneto_map_inset, lparams)
 
 # %%
 ############## Seasonal Analysis ##############
+print("Seasonal Analysis")
 from scipy.stats import linregress
 
 
@@ -720,9 +719,11 @@ for station in stations:
 
         # Wavelet Transform
         wT, tau = wavelet_transform(x, psi, delta_t, mode="per")
-        f = 1 / tau
 
-        psd = np.array([np.nanmean(w**2) * delta_t / np.log(2) for w in wT])
+        # nan_safe: the season mask leaves NaNs in x, which spread through the
+        # filter bank; average over the finite coefficients only. Fully masked
+        # coarse levels stay NaN and are dropped by the psd > 0 filter below.
+        psd, f = wavelet_psd(wT, tau, delta_t, angular=False, nan_safe=True)
         psd, f, tau = psd[psd > 0], f[psd > 0], tau[psd > 0]
         result.update({season: (psd, f)})
         ints.update({season: integral_scale})
@@ -750,6 +751,7 @@ scaling_df = scaling_df.merge(
 
 # %%
 ############## Fig 6: Seasonal Analysis ##############
+print("Fig 6")
 labels = ["(a)", "(b)", "(c)"]
 fig, axs = plt.subplots(1, 3, figsize=(9, 3), tight_layout=True)
 psd1_A = [3e-2, 5e-2, 5e-2]
@@ -863,39 +865,6 @@ plt.show()
 
 # %%
 ############## Fig S2: Seasonal Analysis ##############
-# seasons = ["summer", "winter"]
-# freq_ranges = ["1day-1hour", "1hour-1min"]
-
-# slope_dfs = {}
-# for season in seasons:
-#     for freq_range in freq_ranges:
-#         key = f"{season}_{freq_range}"
-#         slope_dfs[key] = scaling_df[
-#             (scaling_df["season"] == season) & (scaling_df["freq_range"] == freq_range)
-#         ].copy()
-
-# freq_range_labels = {
-#     "1day-1hour": "[1 day - 1h]",
-#     "1hour-1min": "[1h - 5min]",
-# }
-
-# for key, df in slope_dfs.items():
-#     season, freq_range = df["season"].iloc[0], df["freq_range"].iloc[0]
-#     cb_label = f"c ({season.capitalize()} - {freq_range_labels[freq_range]})"
-#     veneto_map_inset.add_scatter(
-#         data_df=df,
-#         data_col="slope",
-#         crs=4326,
-#         temporary=True,
-#         to_show=["raster", "base"],
-#         x_col="Lon",
-#         y_col="Lat",
-#         s=100,
-#         cmap="plasma",
-#         cb_label=cb_label,
-#         save_filepath=f"output/slope_map_{key}.png",
-#     )
-
 
 # %%
 def plot_slope_map(scaling_df, veneto_map, veneto_map_inset, save_path=None):
@@ -967,7 +936,8 @@ def plot_slope_map(scaling_df, veneto_map, veneto_map_inset, save_path=None):
         plt.savefig(save_path, dpi=300, format="pdf")
         plt.close()
 
-
+veneto_map_inset = create_veneto_map(cb=1.5, add_inset=True)
+veneto_map = create_veneto_map(cb=1.5, add_inset=False)
 plot_slope_map(
     scaling_df, veneto_map, veneto_map_inset, save_path="output/c_map_seasonal.pdf"
 )

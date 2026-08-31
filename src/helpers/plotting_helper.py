@@ -71,12 +71,3 @@ def configure_axis(ax, axis_settings):
     # Return the configured axis for further chaining if needed
     return ax
 
-
-def plot_timeseries(ax, t, x, axis_settings):
-    markerline, stemlines, baseline = ax.stem(t, x, markerfmt='none')
-    stemlines.set_linewidth(0.5)
-    configure_axis(ax, axis_settings)
-    ax.set_ylim(bottom=0)
-    ax.xaxis.set_tick_params(which="minor", bottom=False)
-    ax.xaxis.set_tick_params(bottom=False)
-    plt.show()

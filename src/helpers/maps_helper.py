@@ -8,6 +8,7 @@ import cartopy.crs as ccrs
 from eomaps import Maps
 import rioxarray
 import matplotlib.colors as mcolors
+from .config import SHP_PATH
 
 
 class RegionalMap:
@@ -329,11 +330,11 @@ def create_veneto_map(cb=0, show=True, add_inset=True):
         "gridlines": {"longitudes": [11, 12, 13], "latitudes": [45, 46]},
     }
 
-    veneto_shp = gpd.read_file("data/shp/veneto_6876.shp")
+    veneto_shp = gpd.read_file(SHP_PATH / "veneto_6876.shp")
     italy_shp = gpd.read_file(
-        "data/shp/georef-italy-regione/georef-italy-regione-millesime.shp"
+        SHP_PATH / "georef-italy-regione/georef-italy-regione-millesime.shp"
     )
-    dtm_data, lon, lat, proj = load_raster("data/shp/DTM_6876.tif")
+    dtm_data, lon, lat, proj = load_raster(SHP_PATH / "DTM_6876.tif")
 
     regional_map = RegionalMap(
         "Veneto", proj, cb_space=cb

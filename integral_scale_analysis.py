@@ -103,6 +103,9 @@ def main() -> None:
         lparams = pd.read_csv("data/lparams.csv").set_index("station_id")
 
     # %%
+    lparams = lparams.drop(
+        columns=[c for c in ("gamma_acf", "gamma_stable") if c in lparams.columns]
+    )
     lparams = lparams.join(analysis_df[["gamma_acf", "gamma_stable"]])
     lparams["gamma_spectrum"] = lparams["A"] / 4
 

@@ -1,0 +1,38 @@
+conda-forge/linux-64                                        Using cache
+conda-forge/noarch                                          Using cache
+
+Pinned packages:
+
+  - python=3.11
+
+
+Transaction
+
+  Prefix: /home/santa/miniforge3/envs/geostat
+
+  Updating specs:
+
+   - nbformat
+
+
+  Package                       Version  Build            Channel          Size
+─────────────────────────────────────────────────────────────────────────────────
+  Install:
+─────────────────────────────────────────────────────────────────────────────────
+
+  + jsonschema                   4.26.0  pyhcf101f3_1     conda-forge      82kB
+  + jsonschema-specifications  2025.9.1  pyhcf101f3_0     conda-forge      19kB
+  + nbformat                     5.11.1  pyhcf101f3_0     conda-forge     108kB
+  + python-fastjsonschema        2.22.2  pyhcf101f3_0     conda-forge     254kB
+  + referencing                  0.37.0  pyhcf101f3_0     conda-forge      52kB
+  + rpds-py                    2026.6.3  py311ha6e1976_0  conda-forge     300kB
+
+  Summary:
+
+  Install: 6 packages
+
+  Total download: 815kB
+
+─────────────────────────────────────────────────────────────────────────────────
+
+
