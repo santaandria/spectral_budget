@@ -1,11 +1,28 @@
-### This module deals with missing values.
-### Author: Santa Andria (santa.andria@dicea.unipd.it)
+"""
+Spectral analysis of precipitation time series.
+
+Wavelet and Fourier power spectra, autocorrelation and integral scales,
+Lorentzian power-law fitting, and the shared series-loading and normalization
+helpers used by the analysis scripts.
+
+Author: Santa Andria (santa.andria@dicea.unipd.it)
+"""
 import numpy as np
+import pandas as pd
 import pywt
 from scipy.integrate import trapezoid
 from statsmodels.tsa.stattools import acf
 from scipy.signal import welch
 import piecewise_regression
+
+
+def load_station_series(folder, station):
+    """Load one station's 5-minute precipitation series, indexed by datetime."""
+    return pd.read_csv(
+        folder + station + ".csv",
+        parse_dates=["datetime"],
+        index_col="datetime",
+    )
 
 
 def standardize(data):

@@ -43,18 +43,14 @@ from scipy.stats import linregress
 from src.helpers import *
 from src.helpers.maps_helper import *
 from src.helpers.integral_scale_analysis import compute_spectra
+from src.helpers.spectral_model import fit_entropy_hyperplane, normalized_source
+from src.helpers.seasonal_analysis import (
+    EXAMPLE_STATIONS,
+    compute_seasonal_scaling,
+)
 
 PRCP_FOLDER = "/home/santa/Shared/data/filled_sampling/"
 RECOMPUTE_LPARAMS = False
-
-
-def load_station_series(station):
-    """Load one station's 5-minute precipitation series, indexed by datetime."""
-    return pd.read_csv(
-        PRCP_FOLDER + station + ".csv",
-        parse_dates=["datetime"],
-        index_col="datetime",
-    )
 
 
 # %%
@@ -245,7 +241,7 @@ conceptual_plot("output/conceptual_plot.pdf")
 # Fig 2: Energy spectra for three example stations
 # --------------------------------------------------------------------------
 def add_extra_wT(ax, station):
-    df = load_station_series(station)
+    df = load_station_series(PRCP_FOLDER, station)
     data = df["PRCP"].values
 
     # Normalize
@@ -449,28 +445,6 @@ plt.show()
 # --------------------------------------------------------------------------
 # Fig 7: Source term
 # --------------------------------------------------------------------------
-def source_term(f, A, B, c, m):
-    h = f / B
-    return (
-        -(
-            A
-            * f
-            * u0
-            * (
-                c**2 * m * h**c * (-1 + h**c)
-                - c * h**c * (1 + h**c) * (2 * m - 1)
-                - 2 * (1 + h**c) ** 2
-            )
-        )
-        / (1 + h**c) ** 3
-    )
-
-
-def normalized_source(f, A, B, c, m, int_scale):
-    normalization = source_term(1 / int_scale, A, B, c, m)
-    return source_term(f, A, B, c, m) / normalization
-
-
 f = np.logspace(-6, 1, 100)
 u0 = 1
 m_values = [0, 1, 10]
@@ -480,7 +454,7 @@ for m in m_values:
     # params_df[f"source_m{m}"] = params_df.apply(lambda row: source_term(f, row["A"], row["B"], row["c"], m), axis=1)
     params_df[f"source_m{m}"] = params_df.apply(
         lambda row: normalized_source(
-            f, row["A"], row["B"], row["c"], m, row["int_scale"]
+            f, row["A"], row["B"], row["c"], m, row["int_scale"], u0
         ),
         axis=1,
     )
@@ -528,46 +502,16 @@ plt.show()
 # --------------------------------------------------------------------------
 # Fig 8: Shannon entropy - compute and regress
 # --------------------------------------------------------------------------
-def shannon_entropy(A, B, c, f_min, f_max):
-    # Return normalized shannon entropy
-    def entropy_integrand(f):
-        p = lorentzian(f, A, B, c)
-        return -p * np.log(p) if p > 0 else 0  # Avoid log(0) issues
-
-    # Compute entropy using numerical integration
-    entropy, _ = quad(entropy_integrand, f_min, f_max)
-    return entropy / np.log(f_max - f_min)
-
-
-lparams["Shannon_Entropy"] = lparams.apply(
-    lambda row: shannon_entropy(
-        row["A"], row["B"], row["c"], row["min_K"], row["max_K"]
-    ),
-    axis=1,
-)
-# Fit hyperplane
-# Assuming lparams is your existing DataFrame with B, c, and Shannon_Entropy columns
-
-X = lparams[["B", "c"]].values
-X = sm.add_constant(X)  # constant intercept
-y = lparams["Shannon_Entropy"].values
-
-# OLS regression model
-model = sm.OLS(y, X).fit()
-
-# print(model.summary())
-
-intercept = model.params[0]
-slope_B = model.params[1]
-slope_c = model.params[2]
-
-print(
-    f"Hyperplane equation: H(f) = {slope_B:.3f} × B + {slope_c:.3f} × c + {intercept:.3f}"
-)
-
-
-B_min, B_max = lparams["B"].min(), lparams["B"].max()
-c_min, c_max = lparams["c"].min(), lparams["c"].max()
+(
+    model,
+    intercept,
+    slope_B,
+    slope_c,
+    B_min,
+    B_max,
+    c_min,
+    c_max,
+) = fit_entropy_hyperplane(lparams)
 
 B_range = np.linspace(B_min, B_max, 1000)
 c_range = np.linspace(c_min, c_max, 1000)
@@ -705,88 +649,10 @@ plot_shannon_entropy_map(veneto_map_inset, lparams)
 # --------------------------------------------------------------------------
 print("Seasonal Analysis")
 
-
-def fit_scaling_slope(f, psd, freq_range):
-    """
-    Slope (and its std. error) of log10(E) vs log10(f), restricted to
-    frequencies within freq_range = (f_min, f_max).
-    """
-    mask = (f >= freq_range[0]) & (f <= freq_range[1])
-    if mask.sum() < 2:
-        return np.nan, np.nan
-    slope, intercept, r, p, se = linregress(np.log10(f[mask]), np.log10(psd[mask]))
-    return slope, se
-
-
-# frequency bounds in h^-1 -> period ranges of [1day-1hour] and [1hour-1min]
-freq_ranges = {
-    "1day-1hour": (1 / 24, 1),
-    "1hour-1min": (1, 60),
-}
-
-psi = pywt.Wavelet("haar")
-spectra = {}
-lparams = {}
-std_error = {}
-int_scale = {}
-
-# All stations (already includes the three example stations used for the spectra plot below)
-stations = stations_df["station_id"].values
-example_stations = ["003_BL_Ar", "127_VR_Bu", "168_VE_Ch"]
-scaling_records = []
-
-for station in stations:
-    df = load_station_series(station)
-
-    summer = df.copy()
-    summer.loc[~summer.index.month.isin([6, 7, 8]), "PRCP"] = np.nan  # JJA
-
-    winter = df.copy()
-    winter.loc[~winter.index.month.isin([12, 1, 2]), "PRCP"] = np.nan  # DJF
-
-    result = {}
-    ints = {}
-
-    for season, data in zip(["summer", "winter"], [summer, winter]):
-        data = data["PRCP"].values
-
-        # Normalize
-        x = standardize(data)
-
-        # ACF Analysis
-        _, _, integral_scale, _ = acf_analysis(x, delta_t)
-
-        # Wavelet Transform
-        wT, tau = wavelet_transform(x, psi, delta_t, mode="per")
-
-        # nan_safe: the season mask leaves NaNs in x, which spread through the
-        # filter bank; average over the finite coefficients only. Fully masked
-        # coarse levels stay NaN and are dropped by the psd > 0 filter below.
-        psd, f = wavelet_psd(wT, tau, delta_t, angular=False, nan_safe=True)
-        psd, f, tau = psd[psd > 0], f[psd > 0], tau[psd > 0]
-        result.update({season: (psd, f)})
-        ints.update({season: integral_scale})
-
-        for range_name, rng in freq_ranges.items():
-            slope, se = fit_scaling_slope(f, psd, rng)
-            scaling_records.append(
-                {
-                    "station_id": station,
-                    "season": season,
-                    "freq_range": range_name,
-                    "slope": -slope,  # c is plotted
-                    "std_error": se,
-                }
-            )
-
-    spectra.update({station: result})
-    int_scale.update({station: ints})
-
-scaling_df = pd.DataFrame(scaling_records)
-scaling_df.to_csv("output/seasonal_scaling_slopes.csv", index=False)
-scaling_df = scaling_df.merge(
-    stations_df[["station_id", "Elv", "Lat", "Lon"]], on="station_id"
+spectra, int_scale, scaling_df, tau = compute_seasonal_scaling(
+    stations_df, PRCP_FOLDER, delta_t
 )
+example_stations = EXAMPLE_STATIONS
 
 # %%
 # --------------------------------------------------------------------------
