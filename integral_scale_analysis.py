@@ -31,7 +31,7 @@ DELTA_T = 5 / 60  # hours
 MAX_RELATIVE_DRIFT = 0.2
 MIN_YEAR_COVERAGE = 0.80
 MIN_VALID_YEARS = 10
-MAX_ACF_LAG = None  # default: largest power-of-two <= record length
+MAX_ACF_LAG = None  
 RECOMPUTE_LPARAMS = False
 # ----------------------------------------------------------------------------
 
